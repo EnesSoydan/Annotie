@@ -1,8 +1,8 @@
 """Uygulama genelinde kullanilan sabitler."""
 
-APP_NAME = "YOLO Etiket Editoru"
+APP_NAME = "Annotie"
 APP_VERSION = "1.0.0"
-ORG_NAME = "LabelEditor"
+ORG_NAME = "Annotie"
 
 SUPPORTED_IMAGE_FORMATS = ['.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.tif', '.webp']
 LABEL_EXTENSION = '.txt'
