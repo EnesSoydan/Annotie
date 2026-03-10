@@ -1,0 +1,44 @@
+# Derleme ciktilari
+dist/
+build/
+*.spec.bak
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+*.egg
+
+# Sanal ortam
+venv/
+.venv/
+env/
+.env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Uygulama ayarlari (kullanici bazinda farkli olur)
+*.ini
+*.cfg
+
+# Gecici dosyalar
+*.tmp
+*.log
+*.bak
+
+# Windows
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Test ciktilari
+.pytest_cache/
+htmlcov/
+.coverage
