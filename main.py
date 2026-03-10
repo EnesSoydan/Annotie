@@ -1,4 +1,4 @@
-"""YOLO Etiket Editoru - Giris Noktasi"""
+"""Annotie - Giris Noktasi"""
 
 import sys
 import traceback
@@ -20,7 +20,7 @@ from src.widgets.main_window import MainWindow
 
 
 # Hata log dosyasinin konumu
-_LOG_PATH = Path.home() / "YOLOEtiketEditoru_errors.log"
+_LOG_PATH = Path.home() / "Annotie_errors.log"
 _window_ready = False   # Pencere tam hazir olduktan sonra hata goster
 
 
