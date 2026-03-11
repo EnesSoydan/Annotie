@@ -44,7 +44,7 @@ jobs:
 
   # ── macOS Build ────────────────────────────────────────────────────────────
   build-macos:
-    runs-on: macos-13   # Intel tabanli - hem Intel hem Apple Silicon Mac'te calisir
+    runs-on: macos-latest
 
     steps:
       - name: Kodu indir
