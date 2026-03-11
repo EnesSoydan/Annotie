@@ -106,6 +106,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    icon='icon.icns',
 )
 
 coll = COLLECT(
@@ -123,6 +124,7 @@ coll = COLLECT(
 app = BUNDLE(
     coll,
     name='Annotie.app',
+    icon='icon.icns',
     bundle_identifier='com.annotie.app',
     info_plist={
         'NSHighResolutionCapable': 'True',

@@ -79,6 +79,13 @@ def main():
 
     try:
         app = create_application(sys.argv)
+
+        # Uygulama ikonunu ayarla
+        from PySide6.QtGui import QIcon
+        _icon_path = Path(__file__).parent / "icon.ico"
+        if _icon_path.exists():
+            app.setWindowIcon(QIcon(str(_icon_path)))
+
         window = MainWindow()
         window.show()
 
