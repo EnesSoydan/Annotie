@@ -1,0 +1,122 @@
+name: Build Annotie
+
+on:
+  push:
+    tags:
+      - 'v*'         # v1.0.0, v1.1.0 gibi tag'lerde tetiklenir
+  workflow_dispatch:  # GitHub arayuzunden manuel tetikleme
+
+permissions:
+  contents: write    # Release olusturmak icin gerekli
+
+jobs:
+  # ── Windows Build ──────────────────────────────────────────────────────────
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+      - name: Kodu indir
+        uses: actions/checkout@v4
+
+      - name: Python kur
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Bagimliliklari yukle
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyinstaller
+          pip install -r requirements.txt
+
+      - name: PyInstaller ile derle
+        run: python -m PyInstaller Annotie.spec --noconfirm
+
+      - name: ZIP olustur
+        shell: pwsh
+        run: Compress-Archive -Path dist\Annotie -DestinationPath Annotie-Windows.zip
+
+      - name: Artifact yukle
+        uses: actions/upload-artifact@v4
+        with:
+          name: Annotie-Windows
+          path: Annotie-Windows.zip
+
+  # ── macOS Build ────────────────────────────────────────────────────────────
+  build-macos:
+    runs-on: macos-13   # Intel tabanli - hem Intel hem Apple Silicon Mac'te calisir
+
+    steps:
+      - name: Kodu indir
+        uses: actions/checkout@v4
+
+      - name: Python kur
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Bagimliliklari yukle
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyinstaller
+          pip install -r requirements.txt
+
+      - name: PyInstaller ile derle
+        run: python -m PyInstaller Annotie_mac.spec --noconfirm
+
+      - name: ZIP olustur
+        run: zip -r Annotie-macOS.zip dist/Annotie.app
+
+      - name: Artifact yukle
+        uses: actions/upload-artifact@v4
+        with:
+          name: Annotie-macOS
+          path: Annotie-macOS.zip
+
+  # ── GitHub Release Olustur ─────────────────────────────────────────────────
+  release:
+    needs: [build-windows, build-macos]
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Windows artifact indir
+        uses: actions/download-artifact@v4
+        with:
+          name: Annotie-Windows
+
+      - name: macOS artifact indir
+        uses: actions/download-artifact@v4
+        with:
+          name: Annotie-macOS
+
+      - name: GitHub Release olustur
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Annotie ${{ github.ref_name }}
+          body: |
+            ## Annotie ${{ github.ref_name }}
+
+            ### İndirme / Download
+
+            | Platform | Dosya | Açıklama |
+            |----------|-------|----------|
+            | 🪟 Windows | `Annotie-Windows.zip` | Windows 10/11 (64-bit) |
+            | 🍎 macOS | `Annotie-macOS.zip` | macOS 11.0+ (Intel & Apple Silicon) |
+
+            ### Kurulum
+
+            **Windows:**
+            1. `Annotie-Windows.zip` dosyasını indir
+            2. ZIP'i bir klasöre çıkart
+            3. `Annotie.exe` dosyasını çalıştır
+
+            **macOS:**
+            1. `Annotie-macOS.zip` dosyasını indir
+            2. ZIP'i çıkart
+            3. `Annotie.app` dosyasını Uygulamalar klasörüne taşı
+            4. İlk açılışta: Sağ tık → Aç → Aç
+          files: |
+            Annotie-Windows.zip
+            Annotie-macOS.zip
+          draft: false
+          prerelease: false
