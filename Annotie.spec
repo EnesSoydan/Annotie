@@ -12,6 +12,7 @@ a = Analysis(
     binaries=[],
     datas=[
         ('src', 'src'),
+        ('icon.ico', '.'),   # Gorev cubugu ikonu icin runtime'da gerekli
     ],
     hiddenimports=[
         'PySide6.QtCore',

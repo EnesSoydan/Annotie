@@ -80,13 +80,34 @@ def main():
     try:
         app = create_application(sys.argv)
 
-        # Uygulama ikonunu ayarla
+        # Uygulama ikonunu ayarla (pencere + gorev cubugu)
         from PySide6.QtGui import QIcon
         _icon_path = Path(__file__).parent / "icon.ico"
+        if not _icon_path.exists():
+            # EXE icinde sys._MEIPASS altinda olabilir
+            _meipass = getattr(sys, '_MEIPASS', None)
+            if _meipass:
+                _icon_path = Path(_meipass) / "icon.ico"
+
         if _icon_path.exists():
-            app.setWindowIcon(QIcon(str(_icon_path)))
+            _icon = QIcon(str(_icon_path))
+            app.setWindowIcon(_icon)
+
+        # Windows gorev cubugu iconu icin AppUserModelID gerekli
+        if sys.platform == "win32":
+            try:
+                import ctypes
+                ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
+                    "annotie.app"
+                )
+            except Exception:
+                pass
 
         window = MainWindow()
+
+        if _icon_path.exists():
+            window.setWindowIcon(_icon)
+
         window.show()
 
         # Pencere tamamen gozuktukten sonra hata gostermeye izin ver

@@ -9,6 +9,7 @@ a = Analysis(
     binaries=[],
     datas=[
         ('src', 'src'),
+        ('icon.png', '.'),   # macOS runtime'da gerekli
     ],
     hiddenimports=[
         'PySide6.QtCore',
