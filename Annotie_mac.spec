@@ -58,6 +58,7 @@ a = Analysis(
         'src.commands.add_annotation_cmd',
         'src.commands.delete_annotation_cmd',
         'src.commands.change_class_cmd',
+        'src.commands.move_annotation_cmd',
         'src.controllers.annotation_controller',
         'src.controllers.dataset_controller',
         'src.controllers.autosave_controller',

@@ -90,14 +90,36 @@ jobs:
       - name: PyInstaller ile derle
         run: python -m PyInstaller Annotie_mac.spec --noconfirm
 
-      - name: ZIP olustur
-        run: zip -r Annotie-macOS.zip dist/Annotie.app
+      - name: Ad-hoc imzala (ucretsiz — Apple sertifikasi gerektirmez)
+        run: |
+          # Ad-hoc imzalama: "-" kimligini kullanir, Apple Developer cert gerekmez.
+          # Bu islem "uygulama hasarli" hatasini onler ve Gatekeeper uyarisini
+          # "bilinmeyen gelistirici" seviyesine indirir (kullanici sag tik → Ac ile acabilir).
+          codesign --deep --force --options runtime --sign - dist/Annotie.app
+          echo "Ad-hoc imzalama tamamlandi."
+          codesign --verify --verbose dist/Annotie.app
+
+      - name: DMG olustur
+        run: |
+          # create-dmg: Applications klasoru kisayolu olan profesyonel DMG
+          brew install create-dmg
+          create-dmg \
+            --volname "Annotie" \
+            --window-pos 200 120 \
+            --window-size 600 380 \
+            --icon-size 120 \
+            --icon "Annotie.app" 175 165 \
+            --hide-extension "Annotie.app" \
+            --app-drop-link 425 165 \
+            "Annotie-macOS.dmg" \
+            "dist/"
+          echo "DMG olusturuldu."
 
       - name: Artifact yukle
         uses: actions/upload-artifact@v4
         with:
           name: Annotie-macOS
-          path: Annotie-macOS.zip
+          path: Annotie-macOS.dmg
 
   # ── GitHub Release Olustur ─────────────────────────────────────────────────
   release:
@@ -127,22 +149,25 @@ jobs:
             | Platform | Dosya | Açıklama |
             |----------|-------|----------|
             | 🪟 Windows | `Annotie-Windows.zip` | Windows 10/11 (64-bit) |
-            | 🍎 macOS | `Annotie-macOS.zip` | macOS 11.0+ (Intel & Apple Silicon) |
+            | 🍎 macOS | `Annotie-macOS.dmg` | macOS 11.0+ (Intel & Apple Silicon) |
 
             ### Kurulum
 
             **Windows:**
-            1. `Annotie-Windows.zip` dosyasını indir
-            2. ZIP'i bir klasöre çıkart
-            3. `Annotie.exe` dosyasını çalıştır
+            1. `Annotie-Windows.zip` dosyasını indir ve çıkart
+            2. `Annotie.exe` dosyasını çalıştır
+            3. SmartScreen uyarısı çıkarsa: **"Daha fazla bilgi"** → **"Yine de çalıştır"**
 
             **macOS:**
-            1. `Annotie-macOS.zip` dosyasını indir
-            2. ZIP'i çıkart
-            3. `Annotie.app` dosyasını Uygulamalar klasörüne taşı
-            4. İlk açılışta: Sağ tık → Aç → Aç
+            1. `Annotie-macOS.dmg` dosyasını indir
+            2. DMG'yi aç, `Annotie` ikonunu **Uygulamalar** klasörüne sürükle
+            3. İlk açılışta Gatekeeper uyarısı çıkarsa: **Sağ tık → Aç → Aç**
+            4. Sonraki açılışlarda uyarı çıkmaz
+
+            > Annotie ücretli Apple/Microsoft sertifikasıyla imzalanmamıştır.
+            > Bu durum normaldir; kaynak kodu tamamen açıktır.
           files: |
             Annotie-Windows.zip
-            Annotie-macOS.zip
+            Annotie-macOS.dmg
           draft: false
           prerelease: false
