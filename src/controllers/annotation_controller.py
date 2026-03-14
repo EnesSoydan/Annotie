@@ -74,6 +74,9 @@ class AnnotationController(QObject):
                 item.signals.geometry_changed.connect(
                     lambda it: self._on_item_geometry_changed(it)
                 )
+                item.signals.move_finished.connect(
+                    lambda it, old, new: self._on_item_move_finished(it, old, new)
+                )
 
         self.annotations_loaded.emit(image_item)
         self._notify_change()
@@ -131,6 +134,7 @@ class AnnotationController(QObject):
                         self._get_class_name(ann.class_id),
                         self._get_class_color(ann.class_id))
         item.signals.geometry_changed.connect(lambda it: self._on_item_geometry_changed(it))
+        item.signals.move_finished.connect(lambda it, old, new: self._on_item_move_finished(it, old, new))
         self._execute_add(ann, item)
 
     def create_polygon(self, points_pixel):
@@ -147,6 +151,7 @@ class AnnotationController(QObject):
                            self._get_class_name(ann.class_id),
                            self._get_class_color(ann.class_id))
         item.signals.geometry_changed.connect(lambda it: self._on_item_geometry_changed(it))
+        item.signals.move_finished.connect(lambda it, old, new: self._on_item_move_finished(it, old, new))
         self._execute_add(ann, item)
 
     def create_obb(self, corners_pixel):
@@ -163,6 +168,7 @@ class AnnotationController(QObject):
                        self._get_class_name(ann.class_id),
                        self._get_class_color(ann.class_id))
         item.signals.geometry_changed.connect(lambda it: self._on_item_geometry_changed(it))
+        item.signals.move_finished.connect(lambda it, old, new: self._on_item_move_finished(it, old, new))
         self._execute_add(ann, item)
 
     def create_keypoints(self, bbox_norm, keypoints):
@@ -278,6 +284,16 @@ class AnnotationController(QObject):
             ann = self._item_to_ann.get(id(canvas_item))
             if ann:
                 self.annotation_modified.emit(self._current_image, ann)
+
+    def _on_item_move_finished(self, canvas_item, old_state: dict, new_state: dict):
+        """Taşıma/resize bittikten sonra undo stack'e komut ekler."""
+        from src.commands.move_annotation_cmd import MoveAnnotationCommand
+        ann = self._item_to_ann.get(id(canvas_item))
+        if ann and self._current_image:
+            cmd = MoveAnnotationCommand(
+                self._current_image, ann, canvas_item, old_state, new_state, self
+            )
+            self._undo_stack.push(cmd)
 
     # --- Kaydetme ---
 

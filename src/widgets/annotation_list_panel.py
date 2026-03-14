@@ -2,10 +2,10 @@
 
 from PySide6.QtWidgets import (
     QDockWidget, QWidget, QVBoxLayout, QListWidget, QListWidgetItem,
-    QPushButton, QHBoxLayout, QLabel
+    QPushButton, QHBoxLayout, QLabel, QMenu
 )
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QColor
+from PySide6.QtGui import QColor, QKeyEvent, QAction
 
 from src.models.annotation import AnnotationType
 
@@ -16,6 +16,36 @@ TYPE_ICONS = {
     AnnotationType.KEYPOINTS: "Pose",
     AnnotationType.CLASSIFICATION: "Cls",
 }
+
+
+class _AnnotationListWidget(QListWidget):
+    """Del tuşu ve sağ tık menüsü destekli liste widget'ı."""
+    delete_requested = Signal(object)  # annotation
+
+    def keyPressEvent(self, event: QKeyEvent):
+        if event.key() in (Qt.Key.Key_Delete, Qt.Key.Key_Backspace):
+            item = self.currentItem()
+            if item:
+                ann = item.data(Qt.ItemDataRole.UserRole)
+                if ann:
+                    self.delete_requested.emit(ann)
+            event.accept()
+            return
+        super().keyPressEvent(event)
+
+    def contextMenuEvent(self, event):
+        item = self.itemAt(event.pos())
+        if item:
+            ann = item.data(Qt.ItemDataRole.UserRole)
+            if ann:
+                menu = QMenu(self)
+                act_del = QAction("Sil", self)
+                act_del.triggered.connect(lambda: self.delete_requested.emit(ann))
+                menu.addAction(act_del)
+                menu.exec(event.globalPos())
+                event.accept()
+                return
+        super().contextMenuEvent(event)
 
 
 class AnnotationListPanel(QDockWidget):
@@ -40,8 +70,9 @@ class AnnotationListPanel(QDockWidget):
         self._count_label.setStyleSheet("color: #888; font-size: 11px;")
         layout.addWidget(self._count_label)
 
-        self._list = QListWidget()
+        self._list = _AnnotationListWidget()
         self._list.currentItemChanged.connect(self._on_selection_changed)
+        self._list.delete_requested.connect(self.annotation_delete_requested)
         layout.addWidget(self._list)
 
         btn_layout = QHBoxLayout()

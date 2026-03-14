@@ -1,7 +1,7 @@
 """QGraphicsView: zoom, pan ve arac yonlendirme."""
 
 from PySide6.QtWidgets import QGraphicsView, QGraphicsPixmapItem, QGraphicsTextItem
-from PySide6.QtCore import Qt, Signal, QPointF
+from PySide6.QtCore import Qt, Signal, QPointF, QEvent
 from PySide6.QtGui import QPainter, QMouseEvent, QWheelEvent, QKeyEvent, QColor, QPen
 from src.canvas.canvas_scene import CanvasScene
 from src.utils.constants import ZOOM_IN_FACTOR, ZOOM_OUT_FACTOR, MIN_ZOOM, MAX_ZOOM
@@ -14,6 +14,8 @@ class CanvasView(QGraphicsView):
     zoom_changed = Signal(float)
     # Bir annotation item'ina sag tik yapildiginda emit edilir: (item, global_pos)
     context_menu_requested = Signal(object, object)
+    # Hover üzerindeyken Del tuşuna basıldığında emit edilir: (canvas_item)
+    delete_hovered_item_requested = Signal(object)
 
     # Fare sürükleme eşiği (viewport piksel): bu kadar hareket → pan; daha az → tıklama
     _DRAG_PAN_THRESHOLD = 5
@@ -30,6 +32,7 @@ class CanvasView(QGraphicsView):
         # Cizim araclari icin bekleyen tiklama (drag mi, click mi tespiti)
         self._pending_click_pos = None        # viewport pos
         self._pending_click_scene_pos = None  # scene pos
+        self._hovered_annotation_item = None  # Mouse altındaki annotation item (hover)
 
         # Render ayarlari
         self.setRenderHints(
@@ -47,6 +50,9 @@ class CanvasView(QGraphicsView):
         # Viewport'ta da mouse tracking açık olmalı, yoksa buton basılı
         # olmadan mouseMoveEvent tetiklenmez
         self.viewport().setMouseTracking(True)
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        # Viewport event'lerini yakala: Enter → focus al, Del → hover sil
+        self.viewport().installEventFilter(self)
 
     def set_tool(self, tool):
         """Aktif araci degistirir."""
@@ -137,11 +143,13 @@ class CanvasView(QGraphicsView):
 
             if self._active_tool:
                 if getattr(self._active_tool, 'use_qt_selection', False):
-                    # SelectTool: bos alana sol tik → pan; item'e tik → normal secim
+                    # SelectTool: item'e tik → Qt seçim
+                    # Boş alana tik → bekle (click=deselect / drag=pan; eşik moveMoveEvent'te)
                     if self._has_interactive_item_at(scene_pos):
                         super().mousePressEvent(event)
                     else:
-                        self._start_pan(event)
+                        self._pending_click_pos = event.pos()
+                        self._pending_click_scene_pos = scene_pos
                     return
                 # Cizim araclari: hemen tetikleme, once drag/click tespiti bekle
                 self._pending_click_pos = event.pos()
@@ -150,10 +158,28 @@ class CanvasView(QGraphicsView):
 
         super().mousePressEvent(event)
 
+    def eventFilter(self, obj, event):
+        """Viewport event'lerini yakala: focus + hover Del."""
+        if obj is self.viewport():
+            t = event.type()
+            if t == QEvent.Type.Enter:
+                # Mouse viewport'a girdiğinde klavye odağını al
+                self.viewport().setFocus(Qt.FocusReason.OtherFocusReason)
+            elif t == QEvent.Type.KeyPress:
+                ke = event
+                if ke.key() in (Qt.Key.Key_Delete, Qt.Key.Key_Backspace):
+                    if self._hovered_annotation_item is not None:
+                        self.delete_hovered_item_requested.emit(self._hovered_annotation_item)
+                        ke.accept()
+                        return True   # Başka hiçbir handler görmeden bitir
+        return super().eventFilter(obj, event)
+
     def mouseMoveEvent(self, event: QMouseEvent):
         scene_pos = self.mapToScene(event.pos())
         self.mouse_scene_pos_changed.emit(scene_pos.x(), scene_pos.y())
         self._crosshair_pos = event.pos()
+        # Hover altındaki annotation item'ı takip et (seçmeden Del için)
+        self._update_hovered_item(scene_pos)
 
         if self._panning:
             self._do_pan(event)
@@ -202,7 +228,10 @@ class CanvasView(QGraphicsView):
             scene_pos = self._pending_click_scene_pos
             self._pending_click_pos = None
             self._pending_click_scene_pos = None
-            if self._active_tool:
+            if self._active_tool and getattr(self._active_tool, 'use_qt_selection', False):
+                # SelectTool: boş alana tık → seçimi kaldır
+                self._scene.clearSelection()
+            elif self._active_tool:
                 self._active_tool.mouse_press(event, scene_pos)
                 self._active_tool.mouse_release(event, scene_pos)
             return
@@ -231,6 +260,14 @@ class CanvasView(QGraphicsView):
     def keyPressEvent(self, event: QKeyEvent):
         if event.key() == Qt.Key.Key_Space and not event.isAutoRepeat():
             self.setCursor(Qt.CursorShape.OpenHandCursor)
+
+        # Del/Backspace: hover altındaki etiket varsa seçmeden sil
+        if event.key() in (Qt.Key.Key_Delete, Qt.Key.Key_Backspace):
+            if self._hovered_annotation_item is not None:
+                self.delete_hovered_item_requested.emit(self._hovered_annotation_item)
+                event.accept()
+                return
+
         if self._active_tool:
             self._active_tool.key_press(event)
         super().keyPressEvent(event)
@@ -241,6 +278,20 @@ class CanvasView(QGraphicsView):
                 cursor = self._active_tool.get_cursor()
                 self.setCursor(cursor if cursor else Qt.CursorShape.CrossCursor)
         super().keyReleaseEvent(event)
+
+    # --- Hover item takibi ---
+    def _update_hovered_item(self, scene_pos):
+        """Mouse altındaki annotation item'ı günceller (seçmeden Del için)."""
+        found = None
+        for item in self.scene().items(scene_pos):
+            if isinstance(item, (QGraphicsPixmapItem, QGraphicsTextItem)):
+                continue
+            if item.acceptedMouseButtons() == Qt.MouseButton.NoButton:
+                continue
+            if hasattr(item, '_annotation') and item._annotation is not None:
+                found = item
+                break
+        self._hovered_annotation_item = found
 
     # --- Pan ---
     def _start_pan(self, event):

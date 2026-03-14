@@ -8,8 +8,9 @@ from PySide6.QtCore import Qt, QObject, Signal
 
 class ItemSignals(QObject):
     """QGraphicsItem QObject degildir, signal/slot icin yardimci sinif."""
-    geometry_changed = Signal(object)  # annotation item
+    geometry_changed = Signal(object)        # annotation item
     selection_changed = Signal(object, bool)
+    move_finished = Signal(object, object, object)  # (item, old_state, new_state)
 
 
 class BaseAnnotationItem:

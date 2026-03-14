@@ -18,6 +18,9 @@ class PolygonItem(QGraphicsPolygonItem, BaseAnnotationItem):
         self._img_w = img_w
         self._img_h = img_h
         self._handles = []
+        self._updating_from_annotation = False
+        self._drag_start_state = None
+        self._resize_start_state = None
 
         poly = self._ann_to_polygon(annotation)
         QGraphicsPolygonItem.__init__(self, poly, parent)
@@ -34,6 +37,9 @@ class PolygonItem(QGraphicsPolygonItem, BaseAnnotationItem):
     def _ann_to_polygon(self, ann: PolygonAnnotation) -> QPolygonF:
         points = [QPointF(x * self._img_w, y * self._img_h) for x, y in ann.points]
         return QPolygonF(points)
+
+    def _capture_state(self) -> dict:
+        return {'points': [list(p) for p in self._annotation.points]}
 
     def _apply_style(self, selected=False):
         fill = self._get_fill_color()
@@ -75,14 +81,32 @@ class PolygonItem(QGraphicsPolygonItem, BaseAnnotationItem):
         br = poly.boundingRect()
         self._label.setPos(br.x() + 2, br.y() - 18)
 
+    # --- Taşıma undo ---
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._drag_start_state = self._capture_state()
+        super().mousePressEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        super().mouseReleaseEvent(event)
+        if event.button() == Qt.MouseButton.LeftButton and self._drag_start_state is not None:
+            new_state = self._capture_state()
+            if new_state != self._drag_start_state:
+                self.signals.move_finished.emit(self, self._drag_start_state, new_state)
+            self._drag_start_state = None
+
+    # --- Handle resize undo ---
+
+    def handle_pressed(self, index: int):
+        self._resize_start_state = self._capture_state()
+
     def handle_moved(self, index: int, scene_x: float, scene_y: float):
         """Bir kosesi sururuken polygon'u gunceller."""
         poly = self.polygon()
         if index < poly.count():
-            # Gorsel sinirlari
             x = max(0, min(scene_x, self._img_w))
             y = max(0, min(scene_y, self._img_h))
-            # scene->item koordinat
             parent_pos = self.scenePos()
             poly[index] = QPointF(x - parent_pos.x(), y - parent_pos.y())
             self.setPolygon(poly)
@@ -92,6 +116,11 @@ class PolygonItem(QGraphicsPolygonItem, BaseAnnotationItem):
 
     def handle_released(self, index: int):
         self._sync_annotation()
+        if self._resize_start_state is not None:
+            new_state = self._capture_state()
+            if new_state != self._resize_start_state:
+                self.signals.move_finished.emit(self, self._resize_start_state, new_state)
+            self._resize_start_state = None
 
     def _sync_annotation(self):
         poly = self.polygon()
@@ -104,8 +133,11 @@ class PolygonItem(QGraphicsPolygonItem, BaseAnnotationItem):
         self._annotation.points = points
 
     def update_from_annotation(self):
+        self._updating_from_annotation = True
+        self.setPos(0, 0)
         poly = self._ann_to_polygon(self._annotation)
         self.setPolygon(poly)
+        self._updating_from_annotation = False
         self._update_handle_positions()
         self._update_label_pos()
         self._label.setPlainText(self._class_name)
@@ -120,7 +152,6 @@ class PolygonItem(QGraphicsPolygonItem, BaseAnnotationItem):
         sp = self.scenePos()
         poly.append(QPointF(scene_x - sp.x(), scene_y - sp.y()))
         self.setPolygon(poly)
-        # Yeni handle ekle — cizim sirasinda gorunur
         h = HandleItem(self, len(self._handles), scene_x - sp.x(), scene_y - sp.y())
         h.setVisible(True)
         self._handles.append(h)
@@ -128,9 +159,10 @@ class PolygonItem(QGraphicsPolygonItem, BaseAnnotationItem):
 
     def itemChange(self, change, value):
         if change == QGraphicsItem.GraphicsItemChange.ItemPositionHasChanged:
-            self._update_handle_positions()
-            self._sync_annotation()
-            self.signals.geometry_changed.emit(self)
+            if not self._updating_from_annotation:
+                self._update_handle_positions()
+                self._sync_annotation()
+                self.signals.geometry_changed.emit(self)
         if change == QGraphicsItem.GraphicsItemChange.ItemSelectedHasChanged:
             self._apply_style(bool(value))
             self._set_handles_visible(bool(value))

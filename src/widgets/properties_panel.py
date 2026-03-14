@@ -45,6 +45,13 @@ class PropertiesPanel(QDockWidget):
         self._canvas_item = canvas_item
         self._rebuild()
 
+    def _on_class_combo_changed(self, class_id):
+        """Sınıf combo'su değişince property_changed sinyali gönderir."""
+        if class_id is None or self._annotation is None:
+            return
+        if class_id != self._annotation.class_id:
+            self.property_changed.emit(self._annotation, {'class_id': class_id})
+
     def clear(self):
         self._annotation = None
         self._canvas_item = None
@@ -80,6 +87,11 @@ class PropertiesPanel(QDockWidget):
                     break
         cls_form.addRow("Sınıf:", cls_combo)
         self._layout.addWidget(cls_group)
+
+        # Sınıf değişince sinyal gönder (populate tamamlandıktan SONRA bağlan)
+        cls_combo.currentIndexChanged.connect(
+            lambda idx: self._on_class_combo_changed(cls_combo.itemData(idx))
+        )
 
         # Tip bazinda koordinatlar
         if ann_type == AnnotationType.BBOX:

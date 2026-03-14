@@ -25,14 +25,15 @@ class BBoxItem(QGraphicsRectItem, BaseAnnotationItem):
 
     def __init__(self, annotation: BBoxAnnotation, img_w: int, img_h: int,
                  class_name: str, class_color: QColor, parent=None):
-        # Once BaseAnnotationItem init
         BaseAnnotationItem.__init__(self, annotation, class_name, class_color)
         self._img_w = img_w
         self._img_h = img_h
         self._handles = []
         self._updating_handles = False
+        self._updating_from_annotation = False
+        self._drag_start_state = None    # Taşıma başlangıç state'i
+        self._resize_start_state = None  # Handle resize başlangıç state'i
 
-        # Piksel koordinatlarina cevir
         x1, y1, x2, y2 = self._ann_to_pixel(annotation)
         QGraphicsRectItem.__init__(self, QRectF(QPointF(x1, y1), QPointF(x2, y2)), parent)
 
@@ -51,6 +52,15 @@ class BBoxItem(QGraphicsRectItem, BaseAnnotationItem):
         w = ann.width * self._img_w
         h = ann.height * self._img_h
         return center_wh_to_rect(cx, cy, w, h)
+
+    def _capture_state(self) -> dict:
+        ann = self._annotation
+        return {
+            'x_center': ann.x_center,
+            'y_center': ann.y_center,
+            'width':    ann.width,
+            'height':   ann.height,
+        }
 
     def _apply_style(self, selected=False):
         fill = self._get_fill_color()
@@ -84,7 +94,6 @@ class BBoxItem(QGraphicsRectItem, BaseAnnotationItem):
         font = QFont("Segoe UI", 8, QFont.Weight.Bold)
         self._label.setFont(font)
         self._label.setZValue(5)
-        # Label tıklama/odak olaylarını yutmasın
         self._label.setFlag(QGraphicsTextItem.GraphicsItemFlag.ItemIsSelectable, False)
         self._label.setFlag(QGraphicsTextItem.GraphicsItemFlag.ItemIsFocusable, False)
         self._label.setFlag(QGraphicsTextItem.GraphicsItemFlag.ItemIsMovable, False)
@@ -95,12 +104,30 @@ class BBoxItem(QGraphicsRectItem, BaseAnnotationItem):
         r = self.rect()
         self._label.setPos(r.x() + 2, r.y() - 18)
 
+    # --- Taşıma undo ---
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._drag_start_state = self._capture_state()
+        super().mousePressEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        super().mouseReleaseEvent(event)
+        if event.button() == Qt.MouseButton.LeftButton and self._drag_start_state is not None:
+            new_state = self._capture_state()
+            if new_state != self._drag_start_state:
+                self.signals.move_finished.emit(self, self._drag_start_state, new_state)
+            self._drag_start_state = None
+
+    # --- Handle resize undo ---
+
+    def handle_pressed(self, index: int):
+        self._resize_start_state = self._capture_state()
+
     def handle_moved(self, index: int, scene_x: float, scene_y: float):
         """Tutamac suruklendiginde dikdortgeni gunceller (sadece 4 kose)."""
         self._updating_handles = True
 
-        # Sahne koordinatlarini gorsel sinirlarinda kilple, sonra yerel koordinata cevir
-        # rect() yerel koordinatlarla calisir; scenePos() = ogrenin sahne uzayi orijini
         sp = self.scenePos()
         sx = max(0.0, min(scene_x, float(self._img_w)))
         sy = max(0.0, min(scene_y, float(self._img_h)))
@@ -110,27 +137,28 @@ class BBoxItem(QGraphicsRectItem, BaseAnnotationItem):
         r = self.rect()
         x1, y1, x2, y2 = r.x(), r.y(), r.x() + r.width(), r.y() + r.height()
 
-        # Kose indeksi: 0=sol-ust, 1=sag-ust, 2=sag-alt, 3=sol-alt
         if index == 0:   x1, y1 = lx, ly
         elif index == 1: x2, y1 = lx, ly
         elif index == 2: x2, y2 = lx, ly
         elif index == 3: x1, y2 = lx, ly
 
-        # Koordinat siralamasini duzelt (kose cevrilirse)
         x1, x2 = min(x1, x2), max(x1, x2)
         y1, y2 = min(y1, y2), max(y1, y2)
 
         self.setRect(QRectF(QPointF(x1, y1), QPointF(x2, y2)))
         self._update_label_pos()
         self._updating_handles = False
-        # setRect ItemPositionHasChanged degil ItemRectHasChanged tetikler,
-        # bu yuzden diger kose tutamaclari elle guncellenmeli
         self._update_handle_positions()
         self._sync_annotation()
         self.signals.geometry_changed.emit(self)
 
     def handle_released(self, index: int):
         self._sync_annotation()
+        if self._resize_start_state is not None:
+            new_state = self._capture_state()
+            if new_state != self._resize_start_state:
+                self.signals.move_finished.emit(self, self._resize_start_state, new_state)
+            self._resize_start_state = None
 
     def _sync_annotation(self):
         """Grafik konumundan annotation modelini gunceller."""
@@ -149,8 +177,11 @@ class BBoxItem(QGraphicsRectItem, BaseAnnotationItem):
 
     def update_from_annotation(self):
         """Annotation modelinden gorunumu gunceller."""
+        self._updating_from_annotation = True
+        self.setPos(0, 0)  # Drag offset'ini sifirla
         x1, y1, x2, y2 = self._ann_to_pixel(self._annotation)
         self.setRect(QRectF(QPointF(x1, y1), QPointF(x2, y2)))
+        self._updating_from_annotation = False
         self._update_handle_positions()
         self._update_label_pos()
         self._label.setPlainText(self._class_name)
@@ -161,9 +192,10 @@ class BBoxItem(QGraphicsRectItem, BaseAnnotationItem):
 
     def itemChange(self, change, value):
         if change == QGraphicsItem.GraphicsItemChange.ItemPositionHasChanged:
-            self._update_handle_positions()
-            self._sync_annotation()
-            self.signals.geometry_changed.emit(self)
+            if not self._updating_from_annotation:
+                self._update_handle_positions()
+                self._sync_annotation()
+                self.signals.geometry_changed.emit(self)
         if change == QGraphicsItem.GraphicsItemChange.ItemSelectedHasChanged:
             self._apply_style(bool(value))
             self._set_handles_visible(bool(value))
@@ -171,7 +203,6 @@ class BBoxItem(QGraphicsRectItem, BaseAnnotationItem):
         return super().itemChange(change, value)
 
     def paint(self, painter, option, widget=None):
-        # Qt'nin varsayilan secim tutamaclarini (beyaz kareler) kaldır
         option.state = option.state & ~QStyle.StateFlag.State_Selected
         super().paint(painter, option, widget)
 

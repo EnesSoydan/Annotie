@@ -18,6 +18,7 @@ class DeleteAnnotationCommand(QUndoCommand):
         self._ctrl._on_annotation_removed(self._image, self._annotation)
 
     def undo(self):
-        self._image.annotations.append(self._annotation)
+        # NOT: _on_annotation_added zaten image.annotations.append() yapıyor;
+        # burada tekrar append etmek ghost etiket oluşturuyordu.
         self._ctrl.scene.add_annotation_item(self._canvas_item)
         self._ctrl._on_annotation_added(self._image, self._annotation, self._canvas_item)

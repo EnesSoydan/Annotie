@@ -24,9 +24,11 @@ class _ExportWorker(QThread):
         from src.io.dataset_exporter import export_dataset
         ok = export_dataset(
             self._dataset, self._path, self._copy_images,
-            progress_callback=lambda c, t: self.progress.emit(c, t)
+            progress_callback=lambda c, t: self.progress.emit(c, t),
+            cancel_check=self.isInterruptionRequested
         )
-        self.finished.emit(ok, self._path)
+        if not self.isInterruptionRequested():
+            self.finished.emit(ok, self._path)
 
 from src.canvas.canvas_scene import CanvasScene
 from src.canvas.canvas_view import CanvasView
@@ -274,8 +276,10 @@ class MainWindow(QMainWindow):
         self.ann_ctrl.annotation_created.connect(self._on_annotation_changed)
         self.ann_ctrl.annotation_deleted.connect(self._on_annotation_changed)
         self.ann_ctrl.annotation_modified.connect(self._refresh_props_panel)
+        self.props_panel.property_changed.connect(self._on_property_changed)
         self.scene.selectionChanged.connect(self._on_canvas_selection_changed)
         self.canvas_view.context_menu_requested.connect(self._on_annotation_context_menu)
+        self.canvas_view.delete_hovered_item_requested.connect(self._on_delete_hovered_item)
         self._undo_stack.canUndoChanged.connect(
             lambda can: self.action_undo.setEnabled(can)
         )
@@ -360,6 +364,13 @@ class MainWindow(QMainWindow):
     def _refresh_props_panel(self, image, annotation):
         self.props_panel.show_annotation(annotation)
 
+    def _on_property_changed(self, annotation, new_values):
+        """Özellikler panelinden gelen değişiklikleri uygular."""
+        if 'class_id' in new_values:
+            item = self.ann_ctrl._ann_to_item.get(annotation.uid)
+            if item:
+                self.ann_ctrl.change_annotation_class(annotation, item, new_values['class_id'])
+
     def _on_annotation_selected(self, annotation):
         item = self.ann_ctrl._ann_to_item.get(annotation.uid)
         if item:
@@ -426,6 +437,12 @@ class MainWindow(QMainWindow):
                 self.ds_ctrl._current_image, annotation, item, self.ann_ctrl
             )
             self._undo_stack.push(cmd)
+
+    def _on_delete_hovered_item(self, canvas_item):
+        """Canvas'ta mouse altındaki etiket Del tuşuyla silinir (seçim gerekmez)."""
+        ann = self.ann_ctrl._item_to_ann.get(id(canvas_item))
+        if ann:
+            self._delete_annotation(ann)
 
     # ─── Menu Handler'lar ─────────────────────────────────────────────────────
 
@@ -549,7 +566,7 @@ class MainWindow(QMainWindow):
         copy = dlg.get_copy_images()
         total = len(self._dataset.get_all_images())
 
-        prog = QProgressDialog("Export hazırlanıyor...", None, 0, total, self)
+        prog = QProgressDialog("Export hazırlanıyor...", "İptal", 0, total, self)
         prog.setWindowTitle("Dışa Aktarılıyor")
         prog.setWindowModality(Qt.WindowModality.WindowModal)
         prog.setMinimumDuration(0)
@@ -557,6 +574,13 @@ class MainWindow(QMainWindow):
         prog.setValue(0)
 
         worker = _ExportWorker(self._dataset, path, copy, self)
+
+        def _on_cancel():
+            worker.requestInterruption()
+            worker.wait(3000)
+            prog.close()
+            self._export_worker = None
+            self._show_toast("Export iptal edildi", is_error=True, duration=3000)
 
         def _on_progress(current, total_count):
             prog.setLabelText(f"Dışa aktarılıyor...  {current} / {total_count} görsel")
@@ -567,12 +591,13 @@ class MainWindow(QMainWindow):
             prog.close()
             self._export_worker = None
             if ok:
-                self._show_toast(f"Dışa aktarma tamamlandı", is_error=False, duration=4000)
+                self._show_toast("Dışa aktarma tamamlandı", is_error=False, duration=4000)
                 QMessageBox.information(self, "Başarılı",
                                         f"Dışa aktarma tamamlandı:\n{export_path}")
             else:
                 QMessageBox.critical(self, "Hata", "Dışa aktarma sırasında hata oluştu.")
 
+        prog.canceled.connect(_on_cancel)
         worker.progress.connect(_on_progress)
         worker.finished.connect(_on_finished)
         self._export_worker = worker  # GC'den korunması için referans sakla

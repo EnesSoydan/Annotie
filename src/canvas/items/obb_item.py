@@ -18,6 +18,9 @@ class OBBItem(QGraphicsPolygonItem, BaseAnnotationItem):
         self._img_w = img_w
         self._img_h = img_h
         self._handles = []
+        self._updating_from_annotation = False
+        self._drag_start_state = None
+        self._resize_start_state = None
 
         poly = self._ann_to_polygon(annotation)
         QGraphicsPolygonItem.__init__(self, poly, parent)
@@ -34,6 +37,9 @@ class OBBItem(QGraphicsPolygonItem, BaseAnnotationItem):
     def _ann_to_polygon(self, ann: OBBAnnotation) -> QPolygonF:
         points = [QPointF(x * self._img_w, y * self._img_h) for x, y in ann.corners]
         return QPolygonF(points)
+
+    def _capture_state(self) -> dict:
+        return {'corners': [list(c) for c in self._annotation.corners]}
 
     def _apply_style(self, selected=False):
         fill = self._get_fill_color()
@@ -74,6 +80,26 @@ class OBBItem(QGraphicsPolygonItem, BaseAnnotationItem):
         br = poly.boundingRect()
         self._label.setPos(br.x() + 2, br.y() - 18)
 
+    # --- Taşıma undo ---
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._drag_start_state = self._capture_state()
+        super().mousePressEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        super().mouseReleaseEvent(event)
+        if event.button() == Qt.MouseButton.LeftButton and self._drag_start_state is not None:
+            new_state = self._capture_state()
+            if new_state != self._drag_start_state:
+                self.signals.move_finished.emit(self, self._drag_start_state, new_state)
+            self._drag_start_state = None
+
+    # --- Handle resize undo ---
+
+    def handle_pressed(self, index: int):
+        self._resize_start_state = self._capture_state()
+
     def handle_moved(self, index: int, scene_x: float, scene_y: float):
         poly = self.polygon()
         sp = self.scenePos()
@@ -88,6 +114,11 @@ class OBBItem(QGraphicsPolygonItem, BaseAnnotationItem):
 
     def handle_released(self, index: int):
         self._sync_annotation()
+        if self._resize_start_state is not None:
+            new_state = self._capture_state()
+            if new_state != self._resize_start_state:
+                self.signals.move_finished.emit(self, self._resize_start_state, new_state)
+            self._resize_start_state = None
 
     def _sync_annotation(self):
         poly = self.polygon()
@@ -100,8 +131,11 @@ class OBBItem(QGraphicsPolygonItem, BaseAnnotationItem):
         self._annotation.corners = corners
 
     def update_from_annotation(self):
+        self._updating_from_annotation = True
+        self.setPos(0, 0)
         poly = self._ann_to_polygon(self._annotation)
         self.setPolygon(poly)
+        self._updating_from_annotation = False
         self._update_handle_positions()
         self._update_label_pos()
         self._label.setPlainText(self._class_name)
@@ -112,9 +146,10 @@ class OBBItem(QGraphicsPolygonItem, BaseAnnotationItem):
 
     def itemChange(self, change, value):
         if change == QGraphicsItem.GraphicsItemChange.ItemPositionHasChanged:
-            self._update_handle_positions()
-            self._sync_annotation()
-            self.signals.geometry_changed.emit(self)
+            if not self._updating_from_annotation:
+                self._update_handle_positions()
+                self._sync_annotation()
+                self.signals.geometry_changed.emit(self)
         if change == QGraphicsItem.GraphicsItemChange.ItemSelectedHasChanged:
             self._apply_style(bool(value))
             self._set_handles_visible(bool(value))

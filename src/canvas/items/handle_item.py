@@ -8,7 +8,7 @@ from PySide6.QtCore import Qt, QRectF
 class HandleItem(QGraphicsRectItem):
     """Annotation ogelerinin koselerinde kullanilan suruklenebilir tutamac."""
 
-    HANDLE_SIZE = 5   # Sabit ekran pikseli (zoom'dan bagimsiz)
+    HANDLE_SIZE = 7   # Sabit ekran pikseli (zoom'dan bagimsiz)
 
     def __init__(self, parent_item, handle_index: int, x: float = 0, y: float = 0):
         s = self.HANDLE_SIZE
@@ -50,6 +50,9 @@ class HandleItem(QGraphicsRectItem):
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
+            # Resize başlamadan önce parent'a haber ver (undo state capture için)
+            if hasattr(self._parent_item, 'handle_pressed'):
+                self._parent_item.handle_pressed(self._index)
             self._dragging = True
             self._drag_start = event.scenePos()
             event.accept()

@@ -9,7 +9,7 @@ from src.io.yaml_handler import write_data_yaml
 
 
 def export_dataset(dataset: Dataset, export_path: str, copy_images: bool = True,
-                   progress_callback=None) -> bool:
+                   progress_callback=None, cancel_check=None) -> bool:
     """Veriseti YOLO formatinda export eder.
 
     Klasor yapisi:
@@ -40,6 +40,9 @@ def export_dataset(dataset: Dataset, export_path: str, copy_images: bool = True,
             folder = SPLIT_FOLDER[split]
             img_dst = root / folder / 'images' / img.filename
             lbl_dst = root / folder / 'labels' / img.label_filename
+
+            if cancel_check and cancel_check():
+                return False
 
             if copy_images and img.path.exists():
                 shutil.copy2(img.path, img_dst)
