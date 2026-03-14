@@ -112,7 +112,35 @@ Hazır kurulum dosyaları [Releases](https://github.com/EnesSoydan/Annotie/relea
 
 **Windows:** ZIP'i çıkart, `Annotie.exe` dosyasını çalıştır.
 
-**macOS:** ZIP'i çıkart, `Annotie.app` dosyasını Uygulamalar klasörüne taşı. İlk açılışta: Sağ tık → Aç → Aç.
+**macOS:** ZIP'i çıkart, `Annotie.app` dosyasını Uygulamalar klasörüne taşı.
+
+---
+
+### ⚠️ Güvenlik Uyarısı (Normal — Beklenen Bir Durum)
+
+Annotie ücretli bir Apple/Microsoft geliştirici sertifikasıyla imzalanmamıştır. Bu nedenle ilk açılışta her iki platformda da güvenlik uyarısı görebilirsiniz. Bu tamamen normaldir; uygulama zararlı değildir, kaynak kodunun tamamı bu repoda açık olarak mevcuttur.
+
+#### 🍎 macOS — "Annotie Açılmadı" Uyarısı
+
+**Yöntem 1 — Sağ tık ile aç (En kolay):**
+1. `Annotie.app` dosyasına **sağ tıkla**
+2. **"Aç"** seç
+3. Çıkan uyarıda **"Aç"** butonuna bas — bu adımdan sonra bir daha sormaz
+
+**Yöntem 2 — Sistem Ayarları:**
+1. Uygulamayı bir kez çift tıkla (uyarı çıkacak, kapat)
+2. **Sistem Ayarları → Gizlilik ve Güvenlik** bölümüne git
+3. En alta in → **"Yine de Aç"** butonuna tıkla
+
+**Yöntem 3 — Terminal:**
+```bash
+sudo xattr -rd com.apple.quarantine /Applications/Annotie.app
+```
+
+#### 🪟 Windows — SmartScreen Uyarısı
+
+1. **"Daha fazla bilgi"** bağlantısına tıkla
+2. **"Yine de çalıştır"** butonuna bas
 
 ---
 
@@ -238,7 +266,35 @@ Pre-built binaries are available on the [Releases](https://github.com/EnesSoydan
 
 **Windows:** Extract the ZIP and run `Annotie.exe`
 
-**macOS:** Extract the ZIP, move `Annotie.app` to Applications. On first launch: Right-click → Open → Open
+**macOS:** Extract the ZIP, move `Annotie.app` to Applications.
+
+---
+
+### ⚠️ Security Warning (Normal — Expected Behavior)
+
+Annotie is not signed with a paid Apple/Microsoft developer certificate. Because of this, both platforms may show a security warning on first launch. This is completely normal — the app is safe, and the full source code is publicly available in this repository.
+
+#### 🍎 macOS — "Annotie cannot be opened" Warning
+
+**Method 1 — Right-click to open (Easiest):**
+1. **Right-click** `Annotie.app`
+2. Select **"Open"**
+3. Click **"Open"** in the dialog — it won't ask again after this
+
+**Method 2 — System Settings:**
+1. Double-click the app once (warning will appear, close it)
+2. Go to **System Settings → Privacy & Security**
+3. Scroll down → click **"Open Anyway"**
+
+**Method 3 — Terminal:**
+```bash
+sudo xattr -rd com.apple.quarantine /Applications/Annotie.app
+```
+
+#### 🪟 Windows — SmartScreen Warning
+
+1. Click **"More info"**
+2. Click **"Run anyway"**
 
 ---
 
