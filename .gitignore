@@ -24,6 +24,9 @@ env/
 *.swp
 *.swo
 
+# Claude Code
+.claude/
+
 # Uygulama ayarlari (kullanici bazinda farkli olur)
 *.ini
 *.cfg
