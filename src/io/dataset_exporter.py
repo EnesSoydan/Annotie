@@ -8,7 +8,8 @@ from src.io.label_writer import write_label_file
 from src.io.yaml_handler import write_data_yaml
 
 
-def export_dataset(dataset: Dataset, export_path: str, copy_images: bool = True) -> bool:
+def export_dataset(dataset: Dataset, export_path: str, copy_images: bool = True,
+                   progress_callback=None) -> bool:
     """Veriseti YOLO formatinda export eder.
 
     Klasor yapisi:
@@ -32,7 +33,9 @@ def export_dataset(dataset: Dataset, export_path: str, copy_images: bool = True)
             (root / folder / 'labels').mkdir(parents=True, exist_ok=True)
 
         # Gorselleri ve etiketleri yaz
-        for img in dataset.get_all_images():
+        images = dataset.get_all_images()
+        total = len(images)
+        for idx, img in enumerate(images):
             split = img.split if img.split in SPLIT_FOLDER else 'train'
             folder = SPLIT_FOLDER[split]
             img_dst = root / folder / 'images' / img.filename
@@ -42,6 +45,9 @@ def export_dataset(dataset: Dataset, export_path: str, copy_images: bool = True)
                 shutil.copy2(img.path, img_dst)
 
             write_label_file(lbl_dst, img.annotations)
+
+            if progress_callback:
+                progress_callback(idx + 1, total)
 
         # Dataset yollarini guncelle (yaml icin)
         dataset.root_path = root

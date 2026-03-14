@@ -1,6 +1,6 @@
 """BBox (detection) annotation grafik ogesi."""
 
-from PySide6.QtWidgets import QGraphicsRectItem, QGraphicsItem, QGraphicsTextItem
+from PySide6.QtWidgets import QGraphicsRectItem, QGraphicsItem, QGraphicsTextItem, QStyle
 from PySide6.QtGui import QPen, QBrush, QColor, QFont
 from PySide6.QtCore import Qt, QRectF, QPointF
 
@@ -155,6 +155,10 @@ class BBoxItem(QGraphicsRectItem, BaseAnnotationItem):
         self._update_label_pos()
         self._label.setPlainText(self._class_name)
 
+    def _set_handles_visible(self, visible: bool):
+        for h in self._handles:
+            h.setVisible(visible)
+
     def itemChange(self, change, value):
         if change == QGraphicsItem.GraphicsItemChange.ItemPositionHasChanged:
             self._update_handle_positions()
@@ -162,16 +166,24 @@ class BBoxItem(QGraphicsRectItem, BaseAnnotationItem):
             self.signals.geometry_changed.emit(self)
         if change == QGraphicsItem.GraphicsItemChange.ItemSelectedHasChanged:
             self._apply_style(bool(value))
+            self._set_handles_visible(bool(value))
             self.signals.selection_changed.emit(self, bool(value))
         return super().itemChange(change, value)
+
+    def paint(self, painter, option, widget=None):
+        # Qt'nin varsayilan secim tutamaclarini (beyaz kareler) kaldır
+        option.state = option.state & ~QStyle.StateFlag.State_Selected
+        super().paint(painter, option, widget)
 
     def hoverEnterEvent(self, event):
         if not self.isSelected():
             pen = QPen(self._get_border_color(), 3)
             self.setPen(pen)
+        self._set_handles_visible(True)
         super().hoverEnterEvent(event)
 
     def hoverLeaveEvent(self, event):
         if not self.isSelected():
             self._apply_style(False)
+            self._set_handles_visible(False)
         super().hoverLeaveEvent(event)

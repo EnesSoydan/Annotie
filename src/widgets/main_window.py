@@ -2,10 +2,31 @@
 
 from PySide6.QtWidgets import (
     QMainWindow, QStatusBar, QDockWidget, QFileDialog,
-    QMessageBox, QLabel, QWidget, QMenu
+    QMessageBox, QLabel, QWidget, QMenu, QStyle, QGraphicsOpacityEffect,
+    QProgressDialog
 )
-from PySide6.QtCore import Qt, QTimer, QPointF
+from PySide6.QtCore import Qt, QTimer, QPointF, QPropertyAnimation, QEasingCurve, QThread, Signal
 from PySide6.QtGui import QAction, QKeySequence, QShortcut
+
+
+class _ExportWorker(QThread):
+    """Export işlemini arka planda çalıştıran iş parçacığı."""
+    progress = Signal(int, int)   # current, total
+    finished = Signal(bool, str)  # success, export_path
+
+    def __init__(self, dataset, path: str, copy_images: bool, parent=None):
+        super().__init__(parent)
+        self._dataset = dataset
+        self._path = path
+        self._copy_images = copy_images
+
+    def run(self):
+        from src.io.dataset_exporter import export_dataset
+        ok = export_dataset(
+            self._dataset, self._path, self._copy_images,
+            progress_callback=lambda c, t: self.progress.emit(c, t)
+        )
+        self.finished.emit(ok, self._path)
 
 from src.canvas.canvas_scene import CanvasScene
 from src.canvas.canvas_view import CanvasView
@@ -29,7 +50,7 @@ from src.widgets.import_dialog import ImportDialog
 from src.controllers.annotation_controller import AnnotationController
 from src.controllers.dataset_controller import DatasetController
 from src.controllers.autosave_controller import AutosaveController
-from src.io.dataset_exporter import export_dataset, create_dataset_structure
+from src.io.dataset_exporter import create_dataset_structure
 from src.utils.config import AppConfig
 from src.utils.constants import APP_NAME, APP_VERSION
 
@@ -42,6 +63,7 @@ class MainWindow(QMainWindow):
         self.config = AppConfig()
         self._dataset = None
         self._canvas_focus = False   # Gorsel odak modu aktif mi
+        self._active_toasts = []     # Aktif toast bildirimleri
 
         self._setup_ui()
         self._setup_controllers()
@@ -156,6 +178,7 @@ class MainWindow(QMainWindow):
         self._add_action(file_menu, "Klasör Aç...", "Ctrl+Shift+O", self._on_open_folder)
         file_menu.addSeparator()
         self._add_action(file_menu, "Görsel İmport Et...", "Ctrl+I", self._on_import_images)
+        self._add_action(file_menu, "Etiket İmport Et...", "Ctrl+Shift+I", self._on_import_labels)
         file_menu.addSeparator()
         self._add_action(file_menu, "Kaydet", "Ctrl+S", self._on_save)
         self._add_action(file_menu, "Tümünü Kaydet", "Ctrl+Shift+S", self._on_save_all)
@@ -187,6 +210,8 @@ class MainWindow(QMainWindow):
         nav_menu = mb.addMenu("&Navigasyon")
         self._add_action(nav_menu, "Önceki Görsel", "A", self.ds_ctrl.prev_image)
         self._add_action(nav_menu, "Sonraki Görsel", "D", self.ds_ctrl.next_image)
+        self._add_action(nav_menu, "Önceki Etiketli Görsel", "Left", self.ds_ctrl.prev_labeled_image)
+        self._add_action(nav_menu, "Sonraki Etiketli Görsel", "Right", self.ds_ctrl.next_labeled_image)
 
         help_menu = mb.addMenu("&Yardım")
         self._add_action(help_menu, "Kısayollar", "F1", self._on_shortcuts)
@@ -240,6 +265,7 @@ class MainWindow(QMainWindow):
         )
         self.image_list_panel.image_selected.connect(self.ds_ctrl.load_image)
         self.image_list_panel.import_requested.connect(self._on_import_images_for_split)
+        self.image_list_panel.tab_clicked.connect(self._on_split_tab_clicked)
         self.class_panel.class_selected.connect(self.ann_ctrl.set_active_class)
         self.class_panel.class_changed.connect(self._on_class_changed)
         self.ann_list_panel.annotation_selected.connect(self._on_annotation_selected)
@@ -277,7 +303,7 @@ class MainWindow(QMainWindow):
         if dataset.classes:
             self.ann_ctrl.set_active_class(0)
             self.class_panel._list.setCurrentRow(0)
-            self.class_panel.raise_()  # Sınıflar panelini öne getir
+            self.class_panel.raise_()
             n = len(dataset.classes)
             self.status_bar.showMessage(
                 f"{n} sınıf data.yaml'dan yüklendi  |  {len(images)} görsel bulundu", 5000
@@ -286,6 +312,30 @@ class MainWindow(QMainWindow):
             self.status_bar.showMessage(
                 f"{len(images)} görsel yüklendi  (data.yaml'da sınıf tanımı bulunamadı)", 5000
             )
+            self._show_toast(
+                "Sınıflar için data.yaml dosyası bulunamadı ya da içerisi boş!",
+                is_error=True, duration=5000
+            )
+
+        # Etiketli / etiketsiz görsel sayısı bildirimi
+        labeled = sum(1 for img in images if img.annotations)
+        unlabeled = len(images) - labeled
+        self._show_toast(
+            f"{labeled} adet etiketli, {unlabeled} adet etiketsiz görsel içeriye aktarıldı",
+            is_error=False, duration=5000
+        )
+
+        # Kaydedilmiş konumları yükle ve "Tümü" konumunu restore et
+        if dataset.root_path:
+            saved = self.config.load_last_positions(str(dataset.root_path))
+            self.ds_ctrl.set_split_positions(saved)
+            all_pos = saved.get("all", -1)
+            if all_pos > 0:   # 0. görsel zaten yüklü; sadece farklıysa restore et
+                self.ds_ctrl.navigate_to_split_position("all")
+                self._show_toast(
+                    f"Tümü kategorisinde {all_pos + 1}. frame'de kaldınız",
+                    is_error=False, duration=4000
+                )
 
     def _on_annotations_loaded(self, image):
         """Gorsel degistiginde onceden yuklu annotationlari gunceller."""
@@ -382,6 +432,7 @@ class MainWindow(QMainWindow):
     def _on_new_dataset(self):
         dlg = NewDatasetDialog(self)
         if dlg.exec():
+            self._save_current_positions()
             result = dlg.get_result()
             from src.models.dataset import Dataset
             dataset = Dataset()
@@ -395,6 +446,7 @@ class MainWindow(QMainWindow):
     def _on_open_dataset(self):
         folder = QFileDialog.getExistingDirectory(self, "YOLO Veri Seti Klasörü Seç")
         if folder:
+            self._save_current_positions()
             self.ds_ctrl.open_dataset(folder)
             self.config.add_recent_file(folder)
             self._update_recent_menu()
@@ -402,6 +454,7 @@ class MainWindow(QMainWindow):
     def _on_open_folder(self):
         folder = QFileDialog.getExistingDirectory(self, "Görsel Klasörü Seç")
         if folder:
+            self._save_current_positions()
             self.ds_ctrl.open_folder(folder)
 
     def _on_save(self):
@@ -442,6 +495,43 @@ class MainWindow(QMainWindow):
                     "Import edilecek yeni görsel bulunamadı.", 3000
                 )
 
+    _SPLIT_TR = {
+        "all": "Tümü", "train": "Eğitim", "val": "Doğrulama",
+        "test": "Test", "unassigned": "Atanmamış"
+    }
+
+    def _on_split_tab_clicked(self, split: str):
+        """Sol panelde bir split tabına tıklandığında o split'in son konumunu gösterir."""
+        if not self._dataset:
+            return
+        pos = self.ds_ctrl.get_split_position_1based(split)
+        if pos > 0:
+            name = self._SPLIT_TR.get(split, split)
+            self._show_toast(
+                f"{name} kategorisinde {pos}. frame'de kaldınız",
+                is_error=False, duration=3500
+            )
+
+    def _on_import_labels(self):
+        """Etiket dosyaları (.txt) import eder — görsel stem adıyla eşleşme yapılır."""
+        if not self._dataset:
+            QMessageBox.information(self, "Bilgi", "Önce bir veri seti veya klasör açın.")
+            return
+        folder = QFileDialog.getExistingDirectory(
+            self, "Etiket Klasörü Seç (.txt dosyaları)"
+        )
+        if not folder:
+            return
+        applied = self.ds_ctrl.import_labels_from_folder(folder)
+        if applied > 0:
+            # Mevcut görseli yenile
+            if self.ds_ctrl._current_image:
+                self.ds_ctrl.load_image(self.ds_ctrl._current_image)
+            self.image_list_panel.load_images(self._dataset.get_all_images())
+            self._show_toast(f"{applied} görsele etiket uygulandı", is_error=False)
+        else:
+            self._show_toast("Eşleşen görsel bulunamadı", is_error=True)
+
     def _on_import_images_for_split(self, split: str):
         """image_list_panel'den 'İmport Et' sinyali geldiğinde çalışır."""
         effective = split if split != "all" else "unassigned"
@@ -452,13 +542,41 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "Bilgi", "Önce bir veri seti açın.")
             return
         dlg = ExportDialog(self)
-        if dlg.exec():
-            path = dlg.get_export_path()
-            copy = dlg.get_copy_images()
-            if export_dataset(self._dataset, path, copy):
-                QMessageBox.information(self, "Başarılı", f"Dışa aktarma tamamlandı:\n{path}")
+        if not dlg.exec():
+            return
+
+        path = dlg.get_export_path()
+        copy = dlg.get_copy_images()
+        total = len(self._dataset.get_all_images())
+
+        prog = QProgressDialog("Export hazırlanıyor...", None, 0, total, self)
+        prog.setWindowTitle("Dışa Aktarılıyor")
+        prog.setWindowModality(Qt.WindowModality.WindowModal)
+        prog.setMinimumDuration(0)
+        prog.setMinimumWidth(380)
+        prog.setValue(0)
+
+        worker = _ExportWorker(self._dataset, path, copy, self)
+
+        def _on_progress(current, total_count):
+            prog.setLabelText(f"Dışa aktarılıyor...  {current} / {total_count} görsel")
+            prog.setValue(current)
+
+        def _on_finished(ok, export_path):
+            prog.setValue(total)
+            prog.close()
+            self._export_worker = None
+            if ok:
+                self._show_toast(f"Dışa aktarma tamamlandı", is_error=False, duration=4000)
+                QMessageBox.information(self, "Başarılı",
+                                        f"Dışa aktarma tamamlandı:\n{export_path}")
             else:
-                QMessageBox.critical(self, "Hata", "Dışa aktarma hatası oluştu.")
+                QMessageBox.critical(self, "Hata", "Dışa aktarma sırasında hata oluştu.")
+
+        worker.progress.connect(_on_progress)
+        worker.finished.connect(_on_finished)
+        self._export_worker = worker  # GC'den korunması için referans sakla
+        worker.start()
 
     def _on_undo(self):
         self._undo_stack.undo()
@@ -484,7 +602,8 @@ class MainWindow(QMainWindow):
             "<tr><td><b>O</b></td><td>OBB Aracı</td></tr>"
             "<tr><td><b>K</b></td><td>Keypoint Aracı</td></tr>"
             "<tr><td><b>C</b></td><td>Sınıflandırma Aracı</td></tr>"
-            "<tr><td><b>A / D</b></td><td>Önceki / Sonraki Görsel</td></tr>"
+            "<tr><td><b>A / D</b></td><td>Önceki / Sonraki Görsel (tümü)</td></tr>"
+            "<tr><td><b>← / →</b></td><td>Önceki / Sonraki Etiketli Görsel</td></tr>"
             "<tr><td><b>Delete</b></td><td>Seçili Etiketi Sil</td></tr>"
             "<tr><td><b>Ctrl+Z</b></td><td>Geri Al</td></tr>"
             "<tr><td><b>Ctrl+Shift+Z</b></td><td>Yinele</td></tr>"
@@ -560,7 +679,9 @@ class MainWindow(QMainWindow):
         self.recent_menu.clear()
         for path in self.config.recent_files:
             action = QAction(path, self)
-            action.triggered.connect(lambda checked, p=path: self.ds_ctrl.open_dataset(p))
+            action.triggered.connect(lambda checked=False, p=path: (
+                self._save_current_positions(), self.ds_ctrl.open_dataset(p)
+            ))
             self.recent_menu.addAction(action)
         if not self.config.recent_files:
             a = QAction("(bos)", self)
@@ -589,6 +710,14 @@ class MainWindow(QMainWindow):
         if dataset and dataset.root_path:
             self.setWindowTitle(f"{APP_NAME} - {dataset.root_path.name}")
 
+    def _save_current_positions(self):
+        """Aktif verisetinin split konumlarını config'e kaydeder."""
+        if self._dataset and self._dataset.root_path:
+            self.config.save_last_positions(
+                str(self._dataset.root_path),
+                self.ds_ctrl.get_split_positions()
+            )
+
     # ─── Kapatma ──────────────────────────────────────────────────────────────
 
     def _restore_window_state(self):
@@ -606,6 +735,7 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event):
         self.config.save_window_state(self.saveGeometry(), self.saveState())
+        self._save_current_positions()
         if self._dataset:
             dirty = self._dataset.get_dirty_images()
             if dirty:
@@ -622,6 +752,59 @@ class MainWindow(QMainWindow):
                     event.ignore()
                     return
         event.accept()
+
+    # ─── Toast Bildirimleri ───────────────────────────────────────────────────
+
+    def _show_toast(self, message: str, is_error: bool = False, duration: int = 4000):
+        """Canvas üzerinde yavaşça kaybolan bildirim mesajı gösterir."""
+        color = "#e74c3c" if is_error else "#2ecc71"
+        label = QLabel(message, self.canvas_view)
+        label.setWordWrap(True)
+        label.setMaximumWidth(420)
+        label.setStyleSheet(f"""
+            QLabel {{
+                background: rgba(20, 20, 20, 220);
+                color: {color};
+                font-size: 12px;
+                font-weight: bold;
+                padding: 9px 15px;
+                border-radius: 7px;
+                border: 1px solid {color};
+            }}
+        """)
+        label.adjustSize()
+
+        # Pozisyon: canvas sağ üst, mevcut toastların altına stack
+        margin = 14
+        x = self.canvas_view.width() - label.width() - margin
+        y = margin
+        for existing in list(self._active_toasts):
+            if existing.isVisible():
+                y = max(y, existing.y() + existing.height() + 6)
+
+        label.move(max(0, x), y)
+        label.show()
+        label.raise_()
+        self._active_toasts.append(label)
+
+        # Opacity efekti + animasyon
+        effect = QGraphicsOpacityEffect(label)
+        label.setGraphicsEffect(effect)
+        anim = QPropertyAnimation(effect, b"opacity", label)
+        anim.setStartValue(1.0)
+        anim.setEndValue(0.0)
+        anim.setDuration(900)
+        anim.setEasingCurve(QEasingCurve.Type.InQuad)
+
+        def _remove():
+            try:
+                self._active_toasts.remove(label)
+            except ValueError:
+                pass
+            label.deleteLater()
+
+        anim.finished.connect(_remove)
+        QTimer.singleShot(duration, anim.start)
 
     # ─── Tema ─────────────────────────────────────────────────────────────────
 

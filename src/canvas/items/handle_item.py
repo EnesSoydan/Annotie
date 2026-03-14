@@ -8,7 +8,7 @@ from PySide6.QtCore import Qt, QRectF
 class HandleItem(QGraphicsRectItem):
     """Annotation ogelerinin koselerinde kullanilan suruklenebilir tutamac."""
 
-    HANDLE_SIZE = 6
+    HANDLE_SIZE = 5   # Sabit ekran pikseli (zoom'dan bagimsiz)
 
     def __init__(self, parent_item, handle_index: int, x: float = 0, y: float = 0):
         s = self.HANDLE_SIZE
@@ -21,12 +21,14 @@ class HandleItem(QGraphicsRectItem):
         self.setPos(x, y)
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsMovable, False)
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemSendsGeometryChanges, True)
-        self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIgnoresTransformations, False)
+        # Zoom'dan bagimsiz sabit ekran boyutu
+        self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIgnoresTransformations, True)
         self.setAcceptHoverEvents(True)
         self.setZValue(10)
 
         self.setBrush(QBrush(QColor(255, 255, 255)))
         self.setPen(QPen(QColor(0, 0, 0), 1))
+        self.setVisible(False)  # Varsayilan: gizli; parent hover/select'te gosterilir
 
     @property
     def index(self) -> int:

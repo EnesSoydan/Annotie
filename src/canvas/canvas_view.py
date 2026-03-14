@@ -15,6 +15,9 @@ class CanvasView(QGraphicsView):
     # Bir annotation item'ina sag tik yapildiginda emit edilir: (item, global_pos)
     context_menu_requested = Signal(object, object)
 
+    # Fare sürükleme eşiği (viewport piksel): bu kadar hareket → pan; daha az → tıklama
+    _DRAG_PAN_THRESHOLD = 5
+
     def __init__(self, scene: CanvasScene, parent=None):
         super().__init__(scene, parent)
         self._scene = scene
@@ -24,6 +27,9 @@ class CanvasView(QGraphicsView):
         self._zoom_level = 1.0
         self._show_crosshair = True
         self._crosshair_pos = None
+        # Cizim araclari icin bekleyen tiklama (drag mi, click mi tespiti)
+        self._pending_click_pos = None        # viewport pos
+        self._pending_click_scene_pos = None  # scene pos
 
         # Render ayarlari
         self.setRenderHints(
@@ -137,8 +143,9 @@ class CanvasView(QGraphicsView):
                     else:
                         self._start_pan(event)
                     return
-                # Cizim araclari: event'i araca ilet
-                self._active_tool.mouse_press(event, scene_pos)
+                # Cizim araclari: hemen tetikleme, once drag/click tespiti bekle
+                self._pending_click_pos = event.pos()
+                self._pending_click_scene_pos = scene_pos
                 return
 
         super().mousePressEvent(event)
@@ -150,6 +157,23 @@ class CanvasView(QGraphicsView):
 
         if self._panning:
             self._do_pan(event)
+            return
+
+        # Bekleyen tiklama varsa: drag mı click mı kontrol et
+        if self._pending_click_pos is not None and \
+                (event.buttons() & Qt.MouseButton.LeftButton):
+            delta = (event.pos() - self._pending_click_pos).manhattanLength()
+            if delta > self._DRAG_PAN_THRESHOLD:
+                # Drag tespit edildi → pan moduna gec, tiklama iptal
+                self._pending_click_pos = None
+                self._pending_click_scene_pos = None
+                self._start_pan(event)
+                return
+            # Esik asilmadi: araca mouse_move gonder (onizleme icin)
+            if self._active_tool:
+                self._active_tool.mouse_move(event, scene_pos)
+            if self._show_crosshair:
+                self.viewport().update()
             return
 
         if self._active_tool:
@@ -170,6 +194,17 @@ class CanvasView(QGraphicsView):
             Qt.MouseButton.MiddleButton, Qt.MouseButton.LeftButton
         ):
             self._end_pan()
+            return
+
+        # Bekleyen tiklama: drag olmadi → click olarak isle
+        if self._pending_click_pos is not None and \
+                event.button() == Qt.MouseButton.LeftButton:
+            scene_pos = self._pending_click_scene_pos
+            self._pending_click_pos = None
+            self._pending_click_scene_pos = None
+            if self._active_tool:
+                self._active_tool.mouse_press(event, scene_pos)
+                self._active_tool.mouse_release(event, scene_pos)
             return
 
         scene_pos = self.mapToScene(event.pos())

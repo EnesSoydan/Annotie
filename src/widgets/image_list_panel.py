@@ -33,8 +33,9 @@ SPLIT_NAMES = [
 class ImageListPanel(QDockWidget):
     """Sol dock: split tabları + görsel listesi + import butonu."""
 
-    image_selected  = Signal(object)   # ImageItem
-    import_requested = Signal(str)     # split adı ("train", "val", "test", "unassigned", "all")
+    image_selected   = Signal(object)   # ImageItem
+    import_requested = Signal(str)     # split adı
+    tab_clicked      = Signal(str)     # Kullanıcı bir tab butonuna tıkladığında (split adı)
 
     def __init__(self, parent=None):
         super().__init__("Görseller", parent)
@@ -117,27 +118,33 @@ class ImageListPanel(QDockWidget):
 
     # ── Veri yükleme ──────────────────────────────────────────────────────────
 
+    # ItemDataRole: UserRole=görsel, UserRole+1=global sıra numarası
+    _ROLE_IMG = Qt.ItemDataRole.UserRole
+    _ROLE_NUM = Qt.ItemDataRole.UserRole + 1
+
     def load_images(self, images: list):
         """Görsel listesini yükler."""
         self._images = images
         self._list.clear()
         self._all_items = []
 
-        for img in images:
+        for i, img in enumerate(images):
             item = QListWidgetItem()
-            item.setData(Qt.ItemDataRole.UserRole, img)
-            self._update_item_text(item, img)
+            item.setData(self._ROLE_IMG, img)
+            item.setData(self._ROLE_NUM, i + 1)   # 1-bazlı global sıra
+            self._update_item_text(item, img, i + 1)
             self._list.addItem(item)
             self._all_items.append(item)
 
         self._apply_filter()
         self._refresh_tab_counts()
 
-    def _update_item_text(self, item: QListWidgetItem, img):
+    def _update_item_text(self, item: QListWidgetItem, img, num: int = 0):
         split = img.split
         label = SPLIT_LABELS.get(split, "-")
         ann_count = len(img.annotations)
-        text = f"[{label}] {img.filename}"
+        prefix = f"{num}. " if num > 0 else ""
+        text = f"{prefix}[{label}] {img.filename}"
         if ann_count > 0:
             text += f"  ({ann_count})"
         item.setText(text)
@@ -145,29 +152,53 @@ class ImageListPanel(QDockWidget):
 
     def refresh_item(self, image_item):
         """Belirli bir görselin satırını günceller."""
-        for i in range(self._list.count()):
-            item = self._list.item(i)
-            if item and item.data(Qt.ItemDataRole.UserRole) is image_item:
-                self._update_item_text(item, image_item)
+        for item in self._all_items:
+            if item.data(self._ROLE_IMG) is image_item:
+                num = self._display_num_for(item)
+                self._update_item_text(item, image_item, num)
                 break
         self._refresh_tab_counts()
 
+    def _display_num_for(self, target_item) -> int:
+        """Aktif sekmeye göre görüntülenecek sıra numarasını hesaplar."""
+        if self._active_split == "all":
+            return target_item.data(self._ROLE_NUM) or 0
+        local = 0
+        for item in self._all_items:
+            if not item.isHidden():
+                local += 1
+                if item is target_item:
+                    return local
+        return 0
+
     def select_image(self, image_item):
         """Belirli bir görseli seçili yapar (görünür olmayan ise tümü tabına geçer)."""
-        for i in range(self._list.count()):
-            item = self._list.item(i)
-            if item and item.data(Qt.ItemDataRole.UserRole) is image_item:
+        for item in self._all_items:
+            if item.data(self._ROLE_IMG) is image_item:
                 if item.isHidden():
-                    # Başka bir tab'da, tümüne geç
                     self._switch_tab("all")
                 self._list.setCurrentItem(item)
                 self._list.scrollToItem(item)
+                break
+
+    def select_image_silent(self, image_item):
+        """Sinyal tetiklemeden seçili görseli günceller (klavye navigasyonunda döngüyü önler)."""
+        for item in self._all_items:
+            if item.data(self._ROLE_IMG) is image_item:
+                if item.isHidden():
+                    self._switch_tab("all")
+                # blockSignals yerine disconnect: gorsel secim highlight dogru guncellenir
+                self._list.currentItemChanged.disconnect(self._on_selection_changed)
+                self._list.setCurrentItem(item)
+                self._list.currentItemChanged.connect(self._on_selection_changed)
+                self._list.scrollToItem(item, self._list.ScrollHint.EnsureVisible)
                 break
 
     # ── Tab yönetimi ──────────────────────────────────────────────────────────
 
     def _on_tab_clicked(self, split: str):
         self._switch_tab(split)
+        self.tab_clicked.emit(split)   # Kullanıcı kaynaklı tıklama bildirimi
 
     def _switch_tab(self, split: str):
         self._active_split = split
@@ -176,18 +207,20 @@ class ImageListPanel(QDockWidget):
         self._apply_filter()
 
     def _apply_filter(self):
-        """Aktif tab ve arama metnine göre listeyi filtreler."""
+        """Aktif tab ve arama metnine göre listeyi filtreler ve sıra numaralarını günceller."""
         search = self._search.text().lower()
-        visible_count = 0
+        local_idx = 0
         for item in self._all_items:
-            img = item.data(Qt.ItemDataRole.UserRole)
+            img = item.data(self._ROLE_IMG)
             split_ok = (self._active_split == "all" or img.split == self._active_split)
             search_ok = (not search or search in img.filename.lower())
             hidden = not (split_ok and search_ok)
             item.setHidden(hidden)
             if not hidden:
-                visible_count += 1
-        self._count_label.setText(f"{visible_count} görsel")
+                local_idx += 1
+                num = item.data(self._ROLE_NUM) if self._active_split == "all" else local_idx
+                self._update_item_text(item, img, num)
+        self._count_label.setText(f"{local_idx} görsel")
 
     def _filter(self, text: str):
         """Arama kutusuna göre filtrele."""
@@ -211,7 +244,7 @@ class ImageListPanel(QDockWidget):
 
     def _on_selection_changed(self, current, previous):
         if current:
-            img = current.data(Qt.ItemDataRole.UserRole)
+            img = current.data(self._ROLE_IMG)
             if img:
                 self.image_selected.emit(img)
 
@@ -221,7 +254,7 @@ class ImageListPanel(QDockWidget):
         item = self._list.itemAt(pos)
         if not item:
             return
-        img = item.data(Qt.ItemDataRole.UserRole)
+        img = item.data(self._ROLE_IMG)
         menu = QMenu(self)
         menu.addSection("Split Ata")
         for split, label in [("train", "Eğitim"), ("val", "Doğrulama"),

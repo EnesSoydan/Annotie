@@ -78,6 +78,23 @@ class AppConfig:
         files.insert(0, path)
         self.recent_files = files
 
+    # --- Son konum (split bazlı) ---
+    def save_last_positions(self, dataset_path: str, positions: dict):
+        """Veri seti için split bazlı son konumları kaydeder (0-bazlı indeks)."""
+        import hashlib
+        h = hashlib.md5(str(dataset_path).encode()).hexdigest()[:16]
+        for split, pos in positions.items():
+            self._settings.setValue(f"positions/{h}/{split}", int(pos))
+
+    def load_last_positions(self, dataset_path: str) -> dict:
+        """Veri seti için split bazlı son konumları yükler (0-bazlı indeks)."""
+        import hashlib
+        h = hashlib.md5(str(dataset_path).encode()).hexdigest()[:16]
+        return {
+            split: int(self._settings.value(f"positions/{h}/{split}", -1))
+            for split in ("all", "train", "val", "test", "unassigned")
+        }
+
     # --- Pencere durumu ---
     def save_window_state(self, geometry, state):
         self._settings.setValue("window/geometry", geometry)

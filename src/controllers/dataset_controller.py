@@ -24,6 +24,10 @@ class DatasetController(QObject):
         self._current_image = None
         self._image_list = []   # Siradaki gorsel listesi
         self._current_index = -1
+        # Split bazlı son konum (0-bazlı indeks; -1 = hiç ziyaret edilmedi)
+        self._split_positions = {
+            "all": -1, "train": -1, "val": -1, "test": -1, "unassigned": -1
+        }
 
     @property
     def dataset(self) -> Dataset:
@@ -50,12 +54,19 @@ class DatasetController(QObject):
         self._ann_ctrl.set_dataset(dataset)
         self._image_list = dataset.get_all_images()
         self._current_index = -1
-        self.dataset_loaded.emit(dataset)
-        self._window.set_dataset(dataset)
-
-        # Ilk gorseli ac
+        # Konumları sıfırla (yeni veri seti için kalıcı konumlar sonradan set edilir)
+        self._split_positions = {
+            "all": -1, "train": -1, "val": -1, "test": -1, "unassigned": -1
+        }
+        # Ilk gorseli sinyal oncesi yukle — restore sonradan split pozisyonlarini ezmemesi icin
         if self._image_list:
             self.load_image_at(0)
+        else:
+            self._ann_ctrl.scene.clear_all()
+            self._ann_ctrl.scene.setSceneRect(0, 0, 0, 0)
+
+        self.dataset_loaded.emit(dataset)
+        self._window.set_dataset(dataset)
 
     def load_image_at(self, index: int):
         """Belirli indisteki gorseli yukler."""
@@ -78,6 +89,15 @@ class DatasetController(QObject):
         image = self._image_list[index]
         self._current_image = image
 
+        # Global ve split bazlı konumları güncelle
+        self._split_positions["all"] = index
+        split = image.split
+        split_imgs = [img for img in self._image_list if img.split == split]
+        try:
+            self._split_positions[split] = split_imgs.index(image)
+        except ValueError:
+            pass
+
         # Gorseli canvas'a yukle
         image.load_dimensions()
         from src.io.image_loader import ImageLoader
@@ -88,6 +108,11 @@ class DatasetController(QObject):
             self._ann_ctrl.scene.set_image(pixmap)
 
         self._ann_ctrl.set_current_image(image)
+
+        # Sol panel secimini senkronize et (sinyal dongusune girmeden)
+        img_panel = getattr(self._window, 'image_list_panel', None)
+        if img_panel:
+            img_panel.select_image_silent(image)
 
         # Durum cubuklarini guncelle
         split_str = {"train": "Eğitim", "val": "Doğrulama", "test": "Test"}.get(
@@ -114,6 +139,20 @@ class DatasetController(QObject):
     def prev_image(self):
         if self._current_index > 0:
             self.load_image_at(self._current_index - 1)
+
+    def next_labeled_image(self):
+        """Etiket iceren bir sonraki gorsele atlar (yön tusu)."""
+        for i in range(self._current_index + 1, len(self._image_list)):
+            if self._image_list[i].annotations:
+                self.load_image_at(i)
+                return
+
+    def prev_labeled_image(self):
+        """Etiket iceren bir onceki gorsele atlar (yön tusu)."""
+        for i in range(self._current_index - 1, -1, -1):
+            if self._image_list[i].annotations:
+                self.load_image_at(i)
+                return
 
     def save_current_image(self):
         """Mevcut gorselin etiketlerini kaydeder."""
@@ -269,6 +308,71 @@ class DatasetController(QObject):
             self.dataset_loaded.emit(self._dataset)
 
         return added
+
+    # ── Konum yönetimi ──────────────────────────────────────────────────────
+
+    def get_split_positions(self) -> dict:
+        """Güncel split bazlı konumları döner (0-bazlı)."""
+        return dict(self._split_positions)
+
+    def set_split_positions(self, positions: dict):
+        """Kaydedilmiş konumları geri yükler."""
+        for k, v in positions.items():
+            if k in self._split_positions:
+                self._split_positions[k] = int(v)
+
+    def get_split_position_1based(self, split: str) -> int:
+        """Belirli bir split için 1-bazlı konum döner (hiç ziyaret edilmemişse 0)."""
+        pos = self._split_positions.get(split, -1)
+        return pos + 1 if pos >= 0 else 0
+
+    def navigate_to_split_position(self, split: str):
+        """Kaydedilmiş split konumuna gider."""
+        pos = self._split_positions.get(split, -1)
+        if pos < 0:
+            return
+        if split == "all":
+            if pos < len(self._image_list):
+                self.load_image_at(pos)
+        else:
+            split_imgs = [img for img in self._image_list if img.split == split]
+            if pos < len(split_imgs):
+                try:
+                    global_idx = self._image_list.index(split_imgs[pos])
+                    self.load_image_at(global_idx)
+                except ValueError:
+                    pass
+
+    def import_labels_from_folder(self, folder_path: str) -> int:
+        """Klasördeki .txt etiket dosyalarını mevcut görsellere stem adıyla eşler ve uygular.
+
+        Returns:
+            Etiket uygulanan görsel sayısı
+        """
+        if not self._dataset:
+            return 0
+
+        from pathlib import Path
+        from src.io.label_reader import read_label_file
+
+        folder = Path(folder_path)
+        if not folder.exists():
+            return 0
+
+        kpt_shape = getattr(self._dataset, 'kpt_shape', None)
+
+        # Stem → ImageItem haritası
+        stem_to_image = {img.path.stem: img for img in self._image_list}
+
+        applied = 0
+        for txt_file in folder.glob("*.txt"):
+            img = stem_to_image.get(txt_file.stem)
+            if img:
+                img.annotations = read_label_file(txt_file, kpt_shape=kpt_shape)
+                img.mark_dirty()
+                applied += 1
+
+        return applied
 
     def get_image_list(self):
         return self._image_list

@@ -1,6 +1,6 @@
 """Polygon (segmentation) annotation grafik ogesi."""
 
-from PySide6.QtWidgets import QGraphicsPolygonItem, QGraphicsItem, QGraphicsTextItem
+from PySide6.QtWidgets import QGraphicsPolygonItem, QGraphicsItem, QGraphicsTextItem, QStyle
 from PySide6.QtGui import QPen, QBrush, QColor, QPolygonF, QFont
 from PySide6.QtCore import Qt, QPointF
 
@@ -110,14 +110,19 @@ class PolygonItem(QGraphicsPolygonItem, BaseAnnotationItem):
         self._update_label_pos()
         self._label.setPlainText(self._class_name)
 
+    def _set_handles_visible(self, visible: bool):
+        for h in self._handles:
+            h.setVisible(visible)
+
     def add_vertex(self, scene_x: float, scene_y: float):
         """Polygon'a yeni bir kose ekler."""
         poly = self.polygon()
         sp = self.scenePos()
         poly.append(QPointF(scene_x - sp.x(), scene_y - sp.y()))
         self.setPolygon(poly)
-        # Yeni handle ekle
+        # Yeni handle ekle — cizim sirasinda gorunur
         h = HandleItem(self, len(self._handles), scene_x - sp.x(), scene_y - sp.y())
+        h.setVisible(True)
         self._handles.append(h)
         self._sync_annotation()
 
@@ -128,15 +133,22 @@ class PolygonItem(QGraphicsPolygonItem, BaseAnnotationItem):
             self.signals.geometry_changed.emit(self)
         if change == QGraphicsItem.GraphicsItemChange.ItemSelectedHasChanged:
             self._apply_style(bool(value))
+            self._set_handles_visible(bool(value))
             self.signals.selection_changed.emit(self, bool(value))
         return super().itemChange(change, value)
+
+    def paint(self, painter, option, widget=None):
+        option.state = option.state & ~QStyle.StateFlag.State_Selected
+        super().paint(painter, option, widget)
 
     def hoverEnterEvent(self, event):
         if not self.isSelected():
             self.setPen(QPen(self._get_border_color(), 3))
+        self._set_handles_visible(True)
         super().hoverEnterEvent(event)
 
     def hoverLeaveEvent(self, event):
         if not self.isSelected():
             self._apply_style(False)
+            self._set_handles_visible(False)
         super().hoverLeaveEvent(event)
