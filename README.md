@@ -164,6 +164,18 @@ numpy>=1.24.0
 
 ---
 
+## Code Signing Policy
+
+Windows için ücretsiz kod imzalama hizmeti [SignPath.io](https://signpath.io) tarafından sağlanmakta olup sertifika [SignPath Foundation](https://signpath.org) tarafından verilmektedir.
+
+| Rol | Kişi |
+|-----|------|
+| Geliştirici & Onaylayıcı | [EnesSoydan](https://github.com/EnesSoydan) |
+
+Bu uygulama, kullanıcı tarafından açıkça talep edilmedikçe herhangi bir bilgiyi harici sistemlere iletmez.
+
+---
+
 ## Lisans
 
 MIT Lisansı — ücretsiz kullanım, değiştirme ve dağıtım serbesttir.
@@ -315,6 +327,18 @@ Pillow>=10.0.0
 PyYAML>=6.0
 numpy>=1.24.0
 ```
+
+---
+
+## Code Signing Policy
+
+Free code signing provided by [SignPath.io](https://signpath.io), certificate by [SignPath Foundation](https://signpath.org).
+
+| Role | Member |
+|------|--------|
+| Developer & Approver | [EnesSoydan](https://github.com/EnesSoydan) |
+
+This program will not transfer any information to other networked systems unless specifically requested by the user.
 
 ---
 
