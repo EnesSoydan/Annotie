@@ -4,7 +4,7 @@ import sys
 from PySide6.QtWidgets import QApplication
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont
-from src.utils.constants import APP_NAME, ORG_NAME
+from src.utils.constants import APP_NAME, APP_VERSION, ORG_NAME
 
 
 def create_application(argv=None) -> QApplication:
@@ -15,7 +15,7 @@ def create_application(argv=None) -> QApplication:
     app = QApplication(argv)
     app.setApplicationName(APP_NAME)
     app.setOrganizationName(ORG_NAME)
-    app.setApplicationVersion("1.0.0")
+    app.setApplicationVersion(APP_VERSION)
 
     # Yuksek DPI destegi
     app.setHighDpiScaleFactorRoundingPolicy(
