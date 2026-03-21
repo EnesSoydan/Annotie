@@ -4,7 +4,6 @@ from pathlib import Path
 from typing import Optional, List
 from src.models.dataset import Dataset
 from src.models.image_item import ImageItem
-from src.io.label_reader import read_label_file
 from src.utils.constants import SUPPORTED_IMAGE_FORMATS
 
 
@@ -67,23 +66,23 @@ def _import_flat_folder(dataset: Dataset, folder: Path):
         item = ImageItem(path=img_path, split="unassigned")
         lbl_path = img_path.with_suffix('.txt')
         if lbl_path.exists():
-            item.annotations = read_label_file(lbl_path)
+            item._pending_label_path = lbl_path
         dataset.add_image(item)
 
 
 def _try_load_label(item: ImageItem, img_path: Path, lbl_dir):
-    """Gorsel icin etiketi bulmaya calisir."""
+    """Gorsel icin etiket yolunu lazy olarak kaydeder."""
     # 1) labels/ klasorundan ara
-    if not item.annotations and lbl_dir and Path(lbl_dir).exists():
+    if lbl_dir and Path(lbl_dir).exists():
         lbl_path = Path(lbl_dir) / (img_path.stem + '.txt')
         if lbl_path.exists():
-            item.annotations = read_label_file(lbl_path)
+            item._pending_label_path = lbl_path
+            return
 
     # 2) Yedek: gorsel yaniında .txt
-    if not item.annotations:
-        lbl_same = img_path.with_suffix('.txt')
-        if lbl_same.exists():
-            item.annotations = read_label_file(lbl_same)
+    lbl_same = img_path.with_suffix('.txt')
+    if lbl_same.exists():
+        item._pending_label_path = lbl_same
 
 
 def _detect_split_from_name(name: str) -> str:

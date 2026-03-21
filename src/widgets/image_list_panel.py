@@ -123,8 +123,10 @@ class ImageListPanel(QDockWidget):
     _ROLE_NUM = Qt.ItemDataRole.UserRole + 1
 
     def load_images(self, images: list):
-        """Görsel listesini yükler."""
+        """Görsel listesini yükler (büyük veri setlerinde donma önlenir)."""
         self._images = images
+        self._list.setUpdatesEnabled(False)
+        self._list.blockSignals(True)
         self._list.clear()
         self._all_items = []
 
@@ -136,6 +138,8 @@ class ImageListPanel(QDockWidget):
             self._list.addItem(item)
             self._all_items.append(item)
 
+        self._list.blockSignals(False)
+        self._list.setUpdatesEnabled(True)
         self._apply_filter()
         self._refresh_tab_counts()
 

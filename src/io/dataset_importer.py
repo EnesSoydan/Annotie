@@ -1,13 +1,11 @@
 """YOLO veriseti klasor yapisini otomatik algilayarak import etme."""
 
 from pathlib import Path
-from typing import Optional, List, Tuple
+from typing import Optional, List
 from src.models.dataset import Dataset
 from src.models.image_item import ImageItem
 from src.models.label_class import LabelClass
-from src.models.annotation import AnnotationType
 from src.io.yaml_handler import read_data_yaml, parse_class_names
-from src.io.label_reader import read_label_file
 from src.utils.constants import SUPPORTED_IMAGE_FORMATS, YAML_FILENAME
 
 
@@ -58,11 +56,12 @@ def import_dataset(root_path: str) -> Optional[Dataset]:
         images = _collect_images(img_dir)
         for img_path in images:
             item = ImageItem(path=img_path, split=split)
-            # Karsilik gelen etiket dosyasini bul
+            # Etiket dosyasi yolunu kaydet, lazy olarak yuklenecek
             if lbl_dir and lbl_dir.exists():
                 lbl_path = lbl_dir / (img_path.stem + '.txt')
                 if lbl_path.exists():
-                    item.annotations = read_label_file(lbl_path, kpt_shape=kpt_shape)
+                    item._pending_label_path = lbl_path
+                    item._pending_kpt_shape = kpt_shape
             dataset.add_image(item)
 
     # Fallback: split yapisi bulunamazsa (data.yaml yok veya klasor yapisi farkli),
@@ -77,7 +76,8 @@ def import_dataset(root_path: str) -> Optional[Dataset]:
                 if labels_dir.exists():
                     lbl_path = labels_dir / (img_path.stem + '.txt')
                     if lbl_path.exists():
-                        item.annotations = read_label_file(lbl_path, kpt_shape=kpt_shape)
+                        item._pending_label_path = lbl_path
+                        item._pending_kpt_shape = kpt_shape
                 dataset.add_image(item)
         else:
             # Duz klasor: root'taki gorselleri yukle
@@ -85,7 +85,8 @@ def import_dataset(root_path: str) -> Optional[Dataset]:
                 item = ImageItem(path=img_path, split='unassigned')
                 lbl_same = img_path.with_suffix('.txt')
                 if lbl_same.exists():
-                    item.annotations = read_label_file(lbl_same, kpt_shape=kpt_shape)
+                    item._pending_label_path = lbl_same
+                    item._pending_kpt_shape = kpt_shape
                 dataset.add_image(item)
 
     return dataset

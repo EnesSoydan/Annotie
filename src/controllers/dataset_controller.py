@@ -98,6 +98,14 @@ class DatasetController(QObject):
         except ValueError:
             pass
 
+        # Lazy etiket yukleme: gorsel secildiginde etiketi oku
+        had_pending = image._pending_label_path is not None
+        image.load_pending_labels()
+        if had_pending:
+            img_panel = getattr(self._window, 'image_list_panel', None)
+            if img_panel:
+                img_panel.refresh_item(image)
+
         # Gorseli canvas'a yukle
         image.load_dimensions()
         from src.io.image_loader import ImageLoader
