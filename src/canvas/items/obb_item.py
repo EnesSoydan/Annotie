@@ -139,12 +139,34 @@ class OBBItem(QGraphicsPolygonItem, BaseAnnotationItem):
         self._update_handle_positions()
         self._update_label_pos()
         self._label.setPlainText(self._class_name)
+        self._apply_style(self.isSelected())
 
     def _set_handles_visible(self, visible: bool):
         for h in self._handles:
             h.setVisible(visible)
 
     def itemChange(self, change, value):
+        if change == QGraphicsItem.GraphicsItemChange.ItemPositionChange:
+            if not self._updating_from_annotation:
+                new_pos = QPointF(value.x(), value.y())
+                poly = self.polygon()
+                if not poly.isEmpty():
+                    br = poly.boundingRect()
+                    img_w = float(self._img_w)
+                    img_h = float(self._img_h)
+                    left = new_pos.x() + br.x()
+                    top = new_pos.y() + br.y()
+                    right = left + br.width()
+                    bottom = top + br.height()
+                    if left < 0:
+                        new_pos.setX(new_pos.x() - left)
+                    if top < 0:
+                        new_pos.setY(new_pos.y() - top)
+                    if right > img_w:
+                        new_pos.setX(new_pos.x() - (right - img_w))
+                    if bottom > img_h:
+                        new_pos.setY(new_pos.y() - (bottom - img_h))
+                return new_pos
         if change == QGraphicsItem.GraphicsItemChange.ItemPositionHasChanged:
             if not self._updating_from_annotation:
                 self._update_handle_positions()

@@ -109,6 +109,25 @@ class KeypointItem(QGraphicsItemGroup, BaseAnnotationItem):
         self._build()
 
     def itemChange(self, change, value):
+        if change == QGraphicsItem.GraphicsItemChange.ItemPositionChange:
+            new_pos = QPointF(value.x(), value.y())
+            if self._bbox_rect:
+                br = self._bbox_rect.rect()
+                img_w = float(self._img_w)
+                img_h = float(self._img_h)
+                left = new_pos.x() + br.x()
+                top = new_pos.y() + br.y()
+                right = left + br.width()
+                bottom = top + br.height()
+                if left < 0:
+                    new_pos.setX(new_pos.x() - left)
+                if top < 0:
+                    new_pos.setY(new_pos.y() - top)
+                if right > img_w:
+                    new_pos.setX(new_pos.x() - (right - img_w))
+                if bottom > img_h:
+                    new_pos.setY(new_pos.y() - (bottom - img_h))
+            return new_pos
         if change == QGraphicsItem.GraphicsItemChange.ItemSelectedHasChanged:
             if self._bbox_rect:
                 pen = QPen(

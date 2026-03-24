@@ -273,7 +273,7 @@ class MainWindow(QMainWindow):
         self.ann_list_panel.annotation_selected.connect(self._on_annotation_selected)
         self.ann_list_panel.annotation_delete_requested.connect(self._delete_annotation)
         self.ann_ctrl.annotations_loaded.connect(self._on_annotations_loaded)
-        self.ann_ctrl.annotation_created.connect(self._on_annotation_changed)
+        self.ann_ctrl.annotation_created.connect(self._on_annotation_created)
         self.ann_ctrl.annotation_deleted.connect(self._on_annotation_changed)
         self.ann_ctrl.annotation_modified.connect(self._refresh_props_panel)
         self.props_panel.property_changed.connect(self._on_property_changed)
@@ -352,6 +352,10 @@ class MainWindow(QMainWindow):
             # Toolbar'daki split secicisini senkronize et
             if hasattr(self, 'toolbar') and self.toolbar.split_selector:
                 self.toolbar.split_selector.set_split(image.split)
+
+    def _on_annotation_created(self, image, annotation):
+        self._on_annotation_changed(image, annotation)
+        self._select_tool("Seç")
 
     def _on_annotation_changed(self, image, annotation):
         if image and self._dataset:
@@ -649,7 +653,21 @@ class MainWindow(QMainWindow):
             "</table>")
 
     def _on_escape_press(self):
-        """ESC: tam ekrandan veya gorsel odak modundan cikar."""
+        """ESC: cizimi iptal et, veya tam ekran/odak modundan cik."""
+        tool = self.canvas_view._active_tool
+        if tool and self._active_tool_name != "Seç":
+            # Devam eden çizim varsa iptal et
+            is_drawing = (getattr(tool, '_drawing', False)
+                          or getattr(tool, '_phase', 0) not in (0, "bbox")
+                          or len(getattr(tool, '_vertices', [])) > 0)
+            if is_drawing:
+                if hasattr(tool, '_cancel_draw'):
+                    tool._cancel_draw()
+                elif hasattr(tool, '_reset'):
+                    tool._reset()
+            # Çizim aracı seçiliyken ESC = her zaman Seç moduna dön
+            self._select_tool("Seç")
+            return
         if self._canvas_focus:
             self._exit_canvas_focus()
         if self.isFullScreen():

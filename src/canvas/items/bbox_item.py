@@ -185,6 +185,35 @@ class BBoxItem(QGraphicsRectItem, BaseAnnotationItem):
         self._update_handle_positions()
         self._update_label_pos()
         self._label.setPlainText(self._class_name)
+        self._apply_style(self.isSelected())
+
+    def _clamp_and_crush(self):
+        """Gorsel sinirlarina dayanan kenari sabitler, karsi kenari ezer."""
+        r = self.rect()
+        sp = self.pos()
+        img_w = float(self._img_w)
+        img_h = float(self._img_h)
+        min_size = 5.0
+
+        left = sp.x() + r.x()
+        top = sp.y() + r.y()
+        right = left + r.width()
+        bottom = top + r.height()
+
+        c_left = max(0.0, left)
+        c_top = max(0.0, top)
+        c_right = min(img_w, right)
+        c_bottom = min(img_h, bottom)
+
+        if c_right - c_left < min_size:
+            c_right = c_left + min_size
+        if c_bottom - c_top < min_size:
+            c_bottom = c_top + min_size
+
+        if c_left != left or c_top != top or c_right != right or c_bottom != bottom:
+            new_rect = QRectF(c_left - sp.x(), c_top - sp.y(),
+                              c_right - c_left, c_bottom - c_top)
+            self.setRect(new_rect)
 
     def _set_handles_visible(self, visible: bool):
         for h in self._handles:
@@ -193,7 +222,9 @@ class BBoxItem(QGraphicsRectItem, BaseAnnotationItem):
     def itemChange(self, change, value):
         if change == QGraphicsItem.GraphicsItemChange.ItemPositionHasChanged:
             if not self._updating_from_annotation:
+                self._clamp_and_crush()
                 self._update_handle_positions()
+                self._update_label_pos()
                 self._sync_annotation()
                 self.signals.geometry_changed.emit(self)
         if change == QGraphicsItem.GraphicsItemChange.ItemSelectedHasChanged:
