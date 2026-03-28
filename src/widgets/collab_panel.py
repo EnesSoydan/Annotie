@@ -16,7 +16,7 @@ class CollabPanel(QDockWidget):
     join_lobby_requested = Signal(str, str, str)  # server_url, lobby_id, display_name
     leave_lobby_requested = Signal()
 
-    DEFAULT_SERVER = "ws://localhost:8765"
+    DEFAULT_SERVER = "wss://annotie.onrender.com"
 
     def __init__(self, parent=None):
         super().__init__("İşbirliği", parent)
