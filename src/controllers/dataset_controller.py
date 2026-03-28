@@ -149,16 +149,16 @@ class DatasetController(QObject):
             self.load_image_at(self._current_index - 1)
 
     def next_labeled_image(self):
-        """Etiket iceren bir sonraki gorsele atlar (yön tusu)."""
+        """Etiket içeren bir sonraki görsele atlar (yön tuşu)."""
         for i in range(self._current_index + 1, len(self._image_list)):
-            if self._image_list[i].annotations:
+            if self._image_list[i].has_labels:
                 self.load_image_at(i)
                 return
 
     def prev_labeled_image(self):
-        """Etiket iceren bir onceki gorsele atlar (yön tusu)."""
+        """Etiket içeren bir önceki görsele atlar (yön tuşu)."""
         for i in range(self._current_index - 1, -1, -1):
-            if self._image_list[i].annotations:
+            if self._image_list[i].has_labels:
                 self.load_image_at(i)
                 return
 

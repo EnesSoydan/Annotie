@@ -2,3 +2,8 @@ PySide6>=6.6.0
 Pillow>=10.0.0
 PyYAML>=6.0
 numpy>=1.24.0
+
+# Isbirligi sunucusu (server/ icin)
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+websockets>=12.0

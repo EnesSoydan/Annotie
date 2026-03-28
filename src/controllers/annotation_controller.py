@@ -24,6 +24,7 @@ class AnnotationController(QObject):
     annotation_created = Signal(object, object)   # (image, annotation)
     annotation_deleted = Signal(object, object)
     annotation_modified = Signal(object, object)
+    annotation_class_changed = Signal(object, object, int)  # (image, annotation, new_class_id)
     annotations_loaded = Signal(object)           # image
 
     def __init__(self, canvas_scene, label_writer_fn, parent=None):
@@ -235,7 +236,7 @@ class AnnotationController(QObject):
         if canvas_item:
             self._item_to_ann.pop(id(canvas_item), None)
         image.mark_dirty()
-        self._schedule_save(image)
+        self._save_image(image)
         self.annotation_deleted.emit(image, annotation)
         self._notify_change()
 

@@ -42,6 +42,7 @@ class ImageListPanel(QDockWidget):
         self._images = []
         self._all_items = []
         self._active_split = "all"
+        self._presence_map = {}  # image_stem -> [RemoteUser]
         self._setup_ui()
 
     # ── UI kurulum ────────────────────────────────────────────────────────────
@@ -143,6 +144,11 @@ class ImageListPanel(QDockWidget):
         self._apply_filter()
         self._refresh_tab_counts()
 
+    def set_presence_data(self, presence_map: dict):
+        """Isbirligi presence verisini gunceller ve listeyi yeniler."""
+        self._presence_map = presence_map
+        self._apply_filter()
+
     def _update_item_text(self, item: QListWidgetItem, img, num: int = 0):
         split = img.split
         label = SPLIT_LABELS.get(split, "-")
@@ -151,8 +157,18 @@ class ImageListPanel(QDockWidget):
         text = f"{prefix}[{label}] {img.filename}"
         if ann_count > 0:
             text += f"  ({ann_count})"
+
+        # Presence gostergesi
+        users_on_image = self._presence_map.get(img.stem, [])
+        if users_on_image:
+            dots = "".join(f"\u25CF" for _ in users_on_image)
+            text = f"{dots} {text}"
+
         item.setText(text)
-        item.setForeground(QColor(204, 204, 204))
+        if users_on_image:
+            item.setForeground(QColor(users_on_image[0].color))
+        else:
+            item.setForeground(QColor(204, 204, 204))
 
     def refresh_item(self, image_item):
         """Belirli bir görselin satırını günceller."""

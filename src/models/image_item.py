@@ -39,6 +39,18 @@ class ImageItem:
     def has_annotations(self) -> bool:
         return len(self.annotations) > 0
 
+    @property
+    def has_labels(self) -> bool:
+        """Etiket var mı kontrol eder (lazy loaded dahil)."""
+        if self.annotations:
+            return True
+        if self._pending_label_path is not None:
+            try:
+                return self._pending_label_path.exists() and self._pending_label_path.stat().st_size > 0
+            except OSError:
+                return False
+        return False
+
     def load_dimensions(self):
         """Gorsel boyutlarini lazily yukler."""
         if self._dimensions_loaded:

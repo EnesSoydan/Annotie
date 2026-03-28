@@ -19,9 +19,15 @@ class ChangeClassCommand(QUndoCommand):
         self._ctrl._refresh_item_class(self._canvas_item, self._new_id)
         self._ctrl._save_image(self._image)
         self._ctrl._notify_change()
+        self._ctrl.annotation_class_changed.emit(
+            self._image, self._annotation, self._new_id
+        )
 
     def undo(self):
         self._annotation.class_id = self._old_id
         self._ctrl._refresh_item_class(self._canvas_item, self._old_id)
         self._ctrl._save_image(self._image)
         self._ctrl._notify_change()
+        self._ctrl.annotation_class_changed.emit(
+            self._image, self._annotation, self._old_id
+        )

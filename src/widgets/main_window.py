@@ -48,10 +48,13 @@ from src.widgets.settings_dialog import SettingsDialog
 from src.widgets.new_dataset_dialog import NewDatasetDialog
 from src.widgets.export_dialog import ExportDialog
 from src.widgets.import_dialog import ImportDialog
+from src.widgets.collab_panel import CollabPanel
+from src.widgets.collab_overlay import CollabOverlay
 
 from src.controllers.annotation_controller import AnnotationController
 from src.controllers.dataset_controller import DatasetController
 from src.controllers.autosave_controller import AutosaveController
+from src.collab.collab_controller import CollabController
 from src.io.dataset_exporter import create_dataset_structure
 from src.utils.config import AppConfig
 from src.utils.constants import APP_NAME, APP_VERSION
@@ -127,6 +130,11 @@ class MainWindow(QMainWindow):
         self.ds_ctrl = DatasetController(self.ann_ctrl, self, self)
         self.autosave_ctrl = AutosaveController(self.ds_ctrl, self.config, self)
         self._undo_stack = self.ann_ctrl.undo_stack
+
+        # Isbirligi kontrolcusu
+        self.collab_ctrl = CollabController(self)
+        self.collab_ctrl.set_controllers(self.ann_ctrl, self.ds_ctrl)
+        self.collab_ctrl.set_main_window(self)
 
     def _write_image_labels(self, image):
         if self._dataset:
@@ -215,6 +223,10 @@ class MainWindow(QMainWindow):
         self._add_action(nav_menu, "Önceki Etiketli Görsel", "Left", self.ds_ctrl.prev_labeled_image)
         self._add_action(nav_menu, "Sonraki Etiketli Görsel", "Right", self.ds_ctrl.next_labeled_image)
 
+        collab_menu = mb.addMenu("&Isbirligi")
+        self._add_action(collab_menu, "Isbirligi Panelini Goster", None,
+                         lambda: (self.collab_panel.show(), self.collab_panel.raise_()))
+
         help_menu = mb.addMenu("&Yardım")
         self._add_action(help_menu, "Kısayollar", "F1", self._on_shortcuts)
         self._add_action(help_menu, "Hakkında", None, self._on_about)
@@ -256,6 +268,15 @@ class MainWindow(QMainWindow):
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.props_panel)
         self.tabifyDockWidget(self.ann_list_panel, self.props_panel)
 
+        # Isbirligi paneli
+        self.collab_panel = CollabPanel(self)
+        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.collab_panel)
+        self.collab_panel.set_collab_controller(self.collab_ctrl)
+        self.tabifyDockWidget(self.props_panel, self.collab_panel)
+
+        # Canvas uzerinde isbirligi uyari banner'i
+        self._collab_overlay = CollabOverlay(self.canvas_view)
+
         self.ann_ctrl.set_annotation_list_panel(self.ann_list_panel)
 
     # ─── Sinyaller ────────────────────────────────────────────────────────────
@@ -270,6 +291,8 @@ class MainWindow(QMainWindow):
         self.image_list_panel.tab_clicked.connect(self._on_split_tab_clicked)
         self.class_panel.class_selected.connect(self.ann_ctrl.set_active_class)
         self.class_panel.class_changed.connect(self._on_class_changed)
+        self.class_panel.class_added.connect(self._on_class_added_collab)
+        self.class_panel.class_removed.connect(self._on_class_removed_collab)
         self.ann_list_panel.annotation_selected.connect(self._on_annotation_selected)
         self.ann_list_panel.annotation_delete_requested.connect(self._delete_annotation)
         self.ann_ctrl.annotations_loaded.connect(self._on_annotations_loaded)
@@ -289,6 +312,13 @@ class MainWindow(QMainWindow):
         self.action_undo.setEnabled(False)
         self.action_redo.setEnabled(False)
 
+        # Isbirligi sinyalleri
+        self.collab_panel.create_lobby_requested.connect(self._on_collab_create)
+        self.collab_panel.join_lobby_requested.connect(self._on_collab_join)
+        self.collab_panel.leave_lobby_requested.connect(self._on_collab_leave)
+        self.collab_ctrl.presence.same_image_warning.connect(self._on_same_image_warning)
+        self.collab_ctrl.presence.presence_changed.connect(self._on_presence_changed)
+
         # ESC: tam ekran / gorsel odak modundan cik
         # (Pencere duzeyinde calısır — cizim iptali araclarda ayrica ele alinir)
         sc_esc = QShortcut(QKeySequence(Qt.Key.Key_Escape), self)
@@ -300,6 +330,7 @@ class MainWindow(QMainWindow):
     def _on_dataset_loaded(self, dataset):
         self._dataset = dataset
         self.ann_ctrl.set_dataset(dataset)
+        self.collab_ctrl.set_dataset(dataset)
         self.class_panel.set_dataset(dataset)
         self.props_panel.set_dataset(dataset)
         images = dataset.get_all_images()
@@ -352,6 +383,9 @@ class MainWindow(QMainWindow):
             # Toolbar'daki split secicisini senkronize et
             if hasattr(self, 'toolbar') and self.toolbar.split_selector:
                 self.toolbar.split_selector.set_split(image.split)
+            # Isbirligi: hangi gorselde oldugunu bildir
+            if self.collab_ctrl.is_in_lobby:
+                self.collab_ctrl.send_image_focus(image.stem)
 
     def _on_annotation_created(self, image, annotation):
         self._on_annotation_changed(image, annotation)
@@ -401,6 +435,8 @@ class MainWindow(QMainWindow):
             self.image_list_panel.refresh_item(current)
 
     def _on_class_changed(self, cls):
+        if self.collab_ctrl.is_in_lobby:
+            self.collab_ctrl.send_class_rename(cls.id, cls.name)
         if not self._dataset or not self.ds_ctrl._current_image:
             return
         for ann in self.ds_ctrl._current_image.annotations:
@@ -694,6 +730,7 @@ class MainWindow(QMainWindow):
         self.class_panel.hide()
         self.ann_list_panel.hide()
         self.props_panel.hide()
+        self.collab_panel.hide()
         self.toolbar.hide()
         self.status_bar.hide()
         self.menuBar().hide()
@@ -705,6 +742,7 @@ class MainWindow(QMainWindow):
         self.class_panel.show()
         self.ann_list_panel.show()
         self.props_panel.show()
+        self.collab_panel.show()
         self.toolbar.show()
         self.status_bar.show()
         self.menuBar().show()
@@ -761,6 +799,39 @@ class MainWindow(QMainWindow):
                 self.ds_ctrl.get_split_positions()
             )
 
+    # ─── Isbirligi ─────────────────────────────────────────────────────────
+
+    def _on_collab_create(self, server_url: str, display_name: str):
+        self.collab_ctrl.set_dataset(self._dataset)
+        self.collab_ctrl.create_lobby(server_url, display_name)
+
+    def _on_collab_join(self, server_url: str, lobby_id: str, display_name: str):
+        self.collab_ctrl.set_dataset(self._dataset)
+        self.collab_ctrl.join_lobby(server_url, lobby_id, display_name)
+
+    def _on_collab_leave(self):
+        self.collab_ctrl.leave_lobby()
+
+    def _on_class_added_collab(self, cls):
+        if self.collab_ctrl.is_in_lobby:
+            color = cls.color.name() if cls.color else None
+            self.collab_ctrl.send_class_add(cls.id, cls.name, color)
+
+    def _on_class_removed_collab(self, class_id: int):
+        if self.collab_ctrl.is_in_lobby:
+            self.collab_ctrl.send_class_delete(class_id)
+
+    def _on_same_image_warning(self, image_stem: str, user_names):
+        if user_names:
+            self._collab_overlay.show_warning(user_names)
+        else:
+            self._collab_overlay.hide_warning()
+
+    def _on_presence_changed(self):
+        self.image_list_panel.set_presence_data(
+            self.collab_ctrl.presence.get_image_user_map()
+        )
+
     # ─── Kapatma ──────────────────────────────────────────────────────────────
 
     def _restore_window_state(self):
@@ -777,6 +848,9 @@ class MainWindow(QMainWindow):
             self.resize(1400, 900)
 
     def closeEvent(self, event):
+        # Isbirligi oturumunu kapat
+        if self.collab_ctrl.is_in_lobby:
+            self.collab_ctrl.leave_lobby()
         self.config.save_window_state(self.saveGeometry(), self.saveState())
         self._save_current_positions()
         if self._dataset:
