@@ -19,7 +19,7 @@
 
 ---
 
-<p align="center"><img src="docs/demo.gif" alt="Annotie Demo" width="800"/></p>
+<p align="center"><img src="docs/demo.gif" alt="Annotie Demo" width="1200"/></p>
 
 ## Annotie Nedir?
 
@@ -44,7 +44,7 @@ Ayni veri setinde farkli etiket tipleri bir arada kullanilabilir. YOLOv5, v8, v1
 
 Annotie, birden fazla kisinin ayni veri seti uzerinde es zamanli calismasina olanak tanir -- ayni odada veya dunya uzerinde farkli lokasyonlarda.
 
-<p align="center"><img src="docs/collab_demo.gif" alt="Collaboration Demo" width="700"/></p>
+<p align="center"><img src="docs/collab_demo.gif" alt="Collaboration Demo" width="400"/></p>
 
 **Nasil Calisir:**
 1. Bir kullanici **Lobi Olustur**'a tiklar, 6 haneli bir kod uretilir
