@@ -2,7 +2,7 @@
   <img src="icon.png" alt="Annotie Logo" width="120"/>
   <h1>Annotie</h1>
   <p>
-    YOLO formatinda veri seti etiketleme icin ucretsiz, acik kaynakli masaustu uygulamasi<br/>
+    YOLO formatında veri seti etiketleme için ücretsiz, açık kaynaklı masaüstü uygulaması<br/>
     Free, open-source desktop annotation tool for YOLO-format datasets
   </p>
 
@@ -15,7 +15,7 @@
 
 ---
 
-## TR Turkce | EN [English](#-english)
+## TR Türkçe | EN [English](#-english)
 
 ---
 
@@ -23,53 +23,53 @@
 
 ## Annotie Nedir?
 
-Annotie, YOLO formatinda veri seti olusturmak ve yonetmek icin gelistirilmis masaustu gorsel etiketleme uygulamasidir. Tum YOLO gorev tiplerini tek bir aracta destekler -- abonelik yok, limit yok, bulut yuklemesi yok.
+Annotie, YOLO formatında veri seti oluşturmak ve yönetmek için geliştirilmiş masaüstü görsel etiketleme uygulamasıdır. Tüm YOLO görev tiplerini tek bir araçta destekler -- abonelik yok, limit yok, bulut yüklemesi yok.
 
 ---
 
-## Ozellikler
+## Özellikler
 
 ### Desteklenen Etiket Tipleri
-| Tip | YOLO Gorevi |
+| Tip | YOLO Görevi |
 |-----|-------------|
 | Bounding Box (BBox) | Detection (Nesne Tespiti) |
 | Polygon | Segmentation (Segmentasyon) |
 | Oriented Bounding Box (OBB) | OBB Detection |
 | Keypoints | Pose Estimation (Poz Tahmini) |
-| Classification | Image Classification (Goruntu Siniflandirma) |
+| Classification | Image Classification (Görüntü Sınıflandırma) |
 
-Ayni veri setinde farkli etiket tipleri bir arada kullanilabilir. YOLOv5, v8, v10, v11, v12 ve sonrasi ile uyumludur.
+Aynı veri setinde farklı etiket tipleri bir arada kullanılabilir. YOLOv5, v8, v10, v11, v12 ve sonrası ile uyumludur.
 
-### Gercek Zamanli Isbirligi (Collaboration)
+### Gerçek Zamanlı İşbirliği (Collaboration)
 
-Annotie, birden fazla kisinin ayni veri seti uzerinde es zamanli calismasina olanak tanir -- ayni odada veya dunya uzerinde farkli lokasyonlarda.
+Annotie, birden fazla kişinin aynı veri seti üzerinde eş zamanlı çalışmasına olanak tanır -- aynı odada veya dünya üzerinde farklı lokasyonlarda.
 
 <p align="center"><img src="docs/collab_demo.gif" alt="Collaboration Demo" width="400"/></p>
 
-**Nasil Calisir:**
-1. Bir kullanici **Lobi Olustur**'a tiklar, 6 haneli bir kod uretilir
-2. Diger kullanicilar bu kodu girerek lobiye katilir
-3. Tum annotation degisiklikleri (olusturma, silme, tasima, sinif degistirme) anlik olarak senkronize edilir
+**Nasıl Çalışır:**
+1. Bir kullanıcı **Lobi Oluştur**'a tıklar, 6 haneli bir kod üretilir
+2. Diğer kullanıcılar bu kodu girerek lobiye katılır
+3. Tüm annotation değişiklikleri (oluşturma, silme, taşıma, sınıf değiştirme) anlık olarak senkronize edilir
 
-**Ozellikler:**
-- Lobi tabanli sistem -- kod paylasarak davet
-- Annotation olusturma, silme, boyutlandirma ve sinif degisikligi anlik sync
-- Sinif ekleme, silme ve yeniden adlandirma sync
-- Presence sistemi -- kim hangi gorselde calisiyor gosterilir
-- Ayni gorselde baska biri calisiyorsa uyari banner'i
-- Otomatik yeniden baglanma ve mesaj kuyruklama
-- Sunucu ucretsiz olarak Render.com uzerinde calisir -- sifir maliyet
+**Özellikler:**
+- Lobi tabanlı sistem -- kod paylaşarak davet
+- Annotation oluşturma, silme, boyutlandırma ve sınıf değişikliği anlık sync
+- Sınıf ekleme, silme ve yeniden adlandırma sync
+- Presence sistemi -- kim hangi görselde çalışıyor gösterilir
+- Aynı görselde başka biri çalışıyorsa uyarı banner'ı
+- Otomatik yeniden bağlanma ve mesaj kuyruklama
+- Sunucu ücretsiz olarak Render.com üzerinde çalışır -- sıfır maliyet
 
-### Veri Seti Yonetimi
-- Standart YOLO klasor yapisini **otomatik tanir**, `data.yaml` dosyasini (siniflar, yollar) otomatik okur
-- **Train / Validation / Test / Atanmamis** split sistemi -- her gorsele split atanabilir
-- **Iki farkli gorsel import modu:**
-  - `Ekle (Add)` -- mevcut split korunur, yeni gorseller eklenir
-  - `Uzerine Yaz (Replace)` -- secilen split temizlenir, yeni gorseller yazilir
-- **Etiket import** -- baska bir klasordeki `.txt` dosyalarini dosya adi eslestirme ile mevcut gorsellere uygular
-- **Export** -- standart YOLO yapisinda ve otomatik olusturulan `data.yaml` ile export eder; arka planda calisir, canli ilerleme bari gosterir (arayuz donmaz)
+### Veri Seti Yönetimi
+- Standart YOLO klasör yapısını **otomatik tanır**, `data.yaml` dosyasını (sınıflar, yollar) otomatik okur
+- **Train / Validation / Test / Atanmamış** split sistemi -- her görsele split atanabilir
+- **İki farklı görsel import modu:**
+  - `Ekle (Add)` -- mevcut split korunur, yeni görseller eklenir
+  - `Üzerine Yaz (Replace)` -- seçilen split temizlenir, yeni görseller yazılır
+- **Etiket import** -- başka bir klasördeki `.txt` dosyalarını dosya adı eşleştirme ile mevcut görsellere uygular
+- **Export** -- standart YOLO yapısında ve otomatik oluşturulan `data.yaml` ile export eder; arka planda çalışır, canlı ilerleme barı gösterir (arayüz donmaz)
 
-### Beklenen Klasor Yapisi
+### Beklenen Klasör Yapısı
 
 ```
 dataset/
@@ -91,83 +91,83 @@ dataset/
 +-- data.yaml
 ```
 
-Annotie bu yapiyi acilista okur, export'ta ayni yapida yazar -- Ultralytics YOLO ile dogrudan kullanima hazir.
+Annotie bu yapıyı açılışta okur, export'ta aynı yapıda yazar -- Ultralytics YOLO ile doğrudan kullanıma hazır.
 
-### Etiketleme Arayuzu
-- **Tikla-birak ile etiket cizimi** -- tikla = etiket koy, surukle = canvas'i kaydir
-- Zoom seviyesinden bagimsiz sabit boyutlu kose tutamaclari, yalnizca hover/secimde gorunur
-- Undo / Redo destegi
-- **Otomatik kaydetme** -- her degisiklik aninda `.txt` dosyasina otomatik yazilir
+### Etiketleme Arayüzü
+- **Tıkla-bırak ile etiket çizimi** -- tıkla = etiket koy, sürükle = canvas'ı kaydır
+- Zoom seviyesinden bağımsız sabit boyutlu köşe tutamaçları, yalnızca hover/seçimde görünür
+- Undo / Redo desteği
+- **Otomatik kaydetme** -- her değişiklik anında `.txt` dosyasına otomatik yazılır
 
 
 ### Navigasyon
-- `A` / `D` -- onceki / sonraki gorsel (tum gorseller)
-- `<-` / `->` -- yalnizca **etiketli** gorseller arasi gecis
+- `A` / `D` -- önceki / sonraki görsel (tüm görseller)
+- `<-` / `->` -- yalnızca **etiketli** görseller arası geçiş
 - Sol panel, klavye navigasyonunda otomatik olarak highlight ve scroll takibi yapar
-- Split sekmeleri **goreli numaralandirma** gosterir (Egitim sekmesindeki 1. gorsel, global indeksten bagimsizdir)
+- Split sekmeleri **göreli numaralandırma** gösterir (Eğitim sekmesindeki 1. görsel, global indeksten bağımsızdır)
 
-### Son Kaldigin Yer (Position Memory)
-Buyuk veri setlerinde calisirken en ise yarayan ozelliklerden biri:
-- Konum **veri seti basina, split basina** (Tumu / Egitim / Dogrulama / Test) ayri ayri kaydedilir
-- Yalnizca "Tumu" sekmesinde gezseniz bile, her gorselin hangi split'e ait oldugu bilindiginden split bazli konumlar da guncellenir
-- Her veri seti gecisinde (kapatma, yeni acma, son acilanlar) otomatik kaydedilir
-- Bir sonraki acilista: *"Egitim kategorisinde 150. frame'de kaldiniz"*
-- Split sekmesine tiklandiginda da o kategorideki son konum gosterilir
+### Son Kaldığın Yer (Position Memory)
+Büyük veri setlerinde çalışırken en işe yarayan özelliklerden biri:
+- Konum **veri seti başına, split başına** (Tümü / Eğitim / Doğrulama / Test) ayrı ayrı kaydedilir
+- Yalnızca "Tümü" sekmesinde gezseniz bile, her görselin hangi split'e ait olduğu bilindiğinden split bazlı konumlar da güncellenir
+- Her veri seti geçişinde (kapatma, yeni açma, son açılanlar) otomatik kaydedilir
+- Bir sonraki açılışta: *"Eğitim kategorisinde 150. frame'de kaldınız"*
+- Split sekmesine tıklandığında da o kategorideki son konum gösterilir
 
-### Arayuz / UX
+### Arayüz / UX
 - Koyu tema (Dark mode)
-- Toast bildirimleri -- yesil (basari) / kirmizi (hata), animasyonlu kaybolma
-- Veri seti acilisinda etiketli / etiketsiz gorsel sayisi, `data.yaml` eksikse uyari
-- Son acilan veri setleri listesi, konum hafizasiyla
-- Pencere durumu (boyut, panel konumlari) kaydedilir ve restore edilir
-- **Odak Modu** (`F12`) -- tum paneller gizlenir, yalnizca canvas kalir
+- Toast bildirimleri -- yeşil (başarı) / kırmızı (hata), animasyonlu kaybolma
+- Veri seti açılışında etiketli / etiketsiz görsel sayısı, `data.yaml` eksikse uyarı
+- Son açılan veri setleri listesi, konum hafızasıyla
+- Pencere durumu (boyut, panel konumları) kaydedilir ve restore edilir
+- **Odak Modu** (`F12`) -- tüm paneller gizlenir, yalnızca canvas kalır
 
 ---
 
-## Indirme
+## İndirme
 
-Hazir kurulum dosyalari [Releases](https://github.com/EnesSoydan/Annotie/releases) sayfasinda mevcuttur.
+Hazır kurulum dosyaları [Releases](https://github.com/EnesSoydan/Annotie/releases) sayfasında mevcuttur.
 
 | Platform | Dosya | Gereksinim |
 |----------|-------|------------|
 | Windows | `Annotie-Windows.zip` | Windows 10/11 (64-bit) |
 | macOS | `Annotie-macOS.zip` | macOS 11.0+ (Intel & Apple Silicon) |
 
-**Windows:** ZIP'i cikart, `Annotie.exe` dosyasini calistir.
+**Windows:** ZIP'i çıkart, `Annotie.exe` dosyasını çalıştır.
 
-**macOS:** ZIP'i cikart, `Annotie.app` dosyasini Uygulamalar klasorune tasi.
+**macOS:** ZIP'i çıkart, `Annotie.app` dosyasını Uygulamalar klasörüne taşı.
 
 ---
 
-### Guvenlik Uyarisi (Normal -- Beklenen Bir Durum)
+### Güvenlik Uyarısı (Normal -- Beklenen Bir Durum)
 
-Annotie ucretli bir Apple/Microsoft gelistirici sertifikasiyla imzalanmamistir. Bu nedenle ilk acilista her iki platformda da guvenlik uyarisi gorebilirsiniz. Bu tamamen normaldir; uygulama zararli degildir, kaynak kodunun tamami bu repoda acik olarak mevcuttur.
+Annotie ücretli bir Apple/Microsoft geliştirici sertifikasıyla imzalanmamıştır. Bu nedenle ilk açılışta her iki platformda da güvenlik uyarısı görebilirsiniz. Bu tamamen normaldir; uygulama zararlı değildir, kaynak kodunun tamamı bu repoda açık olarak mevcuttur.
 
-#### macOS -- "Annotie Acilmadi" Uyarisi
+#### macOS -- "Annotie Açılmadı" Uyarısı
 
-**Yontem 1 -- Sag tik ile ac (En kolay):**
-1. `Annotie.app` dosyasina **sag tikla**
-2. **"Ac"** sec
-3. Cikan uyarida **"Ac"** butonuna bas -- bu adimdan sonra bir daha sormaz
+**Yöntem 1 -- Sağ tık ile aç (En kolay):**
+1. `Annotie.app` dosyasına **sağ tıkla**
+2. **"Aç"** seç
+3. Çıkan uyarıda **"Aç"** butonuna bas -- bu adımdan sonra bir daha sormaz
 
-**Yontem 2 -- Sistem Ayarlari:**
-1. Uygulamayi bir kez cift tikla (uyari cikacak, kapat)
-2. **Sistem Ayarlari - Gizlilik ve Guvenlik** bolumune git
-3. En alta in - **"Yine de Ac"** butonuna tikla
+**Yöntem 2 -- Sistem Ayarları:**
+1. Uygulamayı bir kez çift tıkla (uyarı çıkacak, kapat)
+2. **Sistem Ayarları - Gizlilik ve Güvenlik** bölümüne git
+3. En alta in - **"Yine de Aç"** butonuna tıkla
 
 **Yontem 3 -- Terminal:**
 ```bash
 sudo xattr -rd com.apple.quarantine /Applications/Annotie.app
 ```
 
-#### Windows -- SmartScreen Uyarisi
+#### Windows -- SmartScreen Uyarısı
 
-1. **"Daha fazla bilgi"** baglantisina tikla
-2. **"Yine de calistir"** butonuna bas
+1. **"Daha fazla bilgi"** bağlantısına tıkla
+2. **"Yine de çalıştır"** butonuna bas
 
 ---
 
-## Kaynaktan Calistir
+## Kaynaktan Çalıştır
 
 ```bash
 git clone https://github.com/EnesSoydan/Annotie.git
@@ -189,19 +189,19 @@ numpy>=1.24.0
 
 ## Code Signing Policy
 
-Windows icin ucretsiz kod imzalama hizmeti [SignPath.io](https://signpath.io) tarafindan saglanmakta olup sertifika [SignPath Foundation](https://signpath.org) tarafindan verilmektedir.
+Windows için ücretsiz kod imzalama hizmeti [SignPath.io](https://signpath.io) tarafından sağlanmakta olup sertifika [SignPath Foundation](https://signpath.org) tarafından verilmektedir.
 
-| Rol | Kisi |
+| Rol | Kişi |
 |-----|------|
-| Gelistirici & Onaylayici | [EnesSoydan](https://github.com/EnesSoydan) |
+| Geliştirici & Onaylayıcı | [EnesSoydan](https://github.com/EnesSoydan) |
 
-Bu uygulama, kullanici tarafindan acikca talep edilmedikce herhangi bir bilgiyi harici sistemlere iletmez.
+Bu uygulama, kullanıcı tarafından açıkça talep edilmedikçe herhangi bir bilgiyi harici sistemlere iletmez.
 
 ---
 
 ## Lisans
 
-GPL-3.0 Lisansi -- ucretsiz kullanim ve degistirme serbesttir; turetilmis calismalar da ayni lisansla acik kaynak olarak dagitilmalidir.
+GPL-3.0 Lisansı -- ücretsiz kullanım ve değiştirme serbesttir; türetilmiş çalışmalar da aynı lisansla açık kaynak olarak dağıtılmalıdır.
 
 ---
 ---
