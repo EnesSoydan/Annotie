@@ -108,10 +108,8 @@ class DatasetController(QObject):
 
         # Gorseli canvas'a yukle
         image.load_dimensions()
-        from src.io.image_loader import ImageLoader
-        # Image loader olarak basit pixmap yukle
-        from PySide6.QtGui import QPixmap
-        pixmap = QPixmap(str(image.path))
+        from src.io.image_loader import load_pixmap
+        pixmap = load_pixmap(str(image.path))
         if not pixmap.isNull():
             self._ann_ctrl.scene.set_image(pixmap)
 
@@ -194,6 +192,125 @@ class DatasetController(QObject):
         """Gorsel split atamasini degistirir."""
         if image:
             image.split = split
+
+    def delete_image_from_disk(self, image):
+        """Gorseli ve varsa etiket dosyasini diskten siler."""
+        if not self._dataset or not image:
+            return False, "Silinecek görsel bulunamadı.", None
+
+        try:
+            old_index = self._image_list.index(image)
+        except ValueError:
+            return False, "Görsel mevcut veri setinde bulunamadı.", None
+
+        is_current = image is self._current_image
+        self._ann_ctrl.discard_pending_save(image)
+        if is_current:
+            self._ann_ctrl.clear_current_image()
+
+        paths_to_delete = []
+
+        def _add_path(path):
+            if path and path not in paths_to_delete:
+                paths_to_delete.append(Path(path))
+
+        _add_path(image.path)
+        _add_path(self._dataset.get_label_path_for_image(image))
+        _add_path(getattr(image, "_pending_label_path", None))
+        _add_path(image.path.with_suffix(".txt"))
+
+        backups = {}
+        for path in paths_to_delete:
+            try:
+                if path.exists() and path.is_file():
+                    backups[path] = path.read_bytes()
+            except OSError as exc:
+                if is_current:
+                    self.load_image_at(old_index)
+                return False, f"Dosya okunamadı: {path}\n{exc}", None
+
+        deleted_files = 0
+        for path in paths_to_delete:
+            try:
+                if path.exists() and path.is_file():
+                    path.unlink()
+                    deleted_files += 1
+            except OSError as exc:
+                for restore_path, data in backups.items():
+                    if not restore_path.exists():
+                        try:
+                            restore_path.parent.mkdir(parents=True, exist_ok=True)
+                            restore_path.write_bytes(data)
+                        except OSError:
+                            pass
+                if is_current:
+                    self.load_image_at(old_index)
+                return False, f"Dosya silinemedi: {path}\n{exc}", None
+
+        self._dataset.remove_image(str(image.path))
+        self._image_list = self._dataset.get_all_images()
+
+        for split in self._split_positions:
+            if self._split_positions[split] >= len(self._image_list):
+                self._split_positions[split] = len(self._image_list) - 1
+
+        if self._image_list:
+            if is_current:
+                next_index = min(old_index, len(self._image_list) - 1)
+                self.load_image_at(next_index)
+            elif self._current_image in self._image_list:
+                self._current_index = self._image_list.index(self._current_image)
+                self._split_positions["all"] = self._current_index
+                current_split = self._current_image.split
+                split_imgs = [img for img in self._image_list if img.split == current_split]
+                if self._current_image in split_imgs:
+                    self._split_positions[current_split] = split_imgs.index(self._current_image)
+        else:
+            self._current_image = None
+            self._current_index = -1
+            self._window.update_image_info("")
+
+        delete_record = {
+            "image": image,
+            "index": old_index,
+            "files": backups,
+        }
+        if deleted_files == 0:
+            return True, "Görsel listeden kaldırıldı; diskte dosya bulunamadı.", delete_record
+        if deleted_files == 1:
+            return True, "Görsel diskten silindi.", delete_record
+        return True, "Görsel ve etiket dosyası diskten silindi.", delete_record
+
+    def restore_deleted_image(self, delete_record):
+        """Kisa sureli geri alma icin silinen gorseli ve etiketini geri yazar."""
+        if not self._dataset or not delete_record:
+            return False, "Geri alınacak görsel bulunamadı."
+
+        image = delete_record.get("image")
+        files = delete_record.get("files", {})
+        index = delete_record.get("index", len(self._image_list))
+        if not image:
+            return False, "Geri alınacak görsel bulunamadı."
+
+        for path in files:
+            if path.exists():
+                return False, f"Geri alınamadı; dosya zaten var: {path}"
+
+        try:
+            for path, data in files.items():
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(data)
+        except OSError as exc:
+            return False, f"Geri alma sırasında dosya yazılamadı:\n{exc}"
+
+        images = self._image_list[:]
+        if image not in images:
+            index = max(0, min(index, len(images)))
+            images.insert(index, image)
+            self._dataset.images = {str(img.path): img for img in images}
+        self._image_list = self._dataset.get_all_images()
+        self.load_image(image)
+        return True, "Görsel geri alındı."
 
     def import_images_from_folder(self, folder_path: str, split: str, mode: str) -> int:
         """Klasörden görselleri mevcut dataset'e import eder.

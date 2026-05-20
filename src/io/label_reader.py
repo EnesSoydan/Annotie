@@ -26,17 +26,21 @@ def read_label_file(
         return annotations
 
     try:
-        with open(path, 'r', encoding='utf-8') as f:
+        with open(path, 'r', encoding='utf-8-sig') as f:
             lines = f.readlines()
     except Exception as e:
         print(f"Etiket dosyasi okunamadi {path}: {e}")
         return annotations
 
     for i, line in enumerate(lines):
-        line = line.strip()
+        line = line.strip().lstrip("\ufeff").replace(",", ".")
         if not line:
             continue
-        ann = parse_annotation_line(line, task_type, kpt_shape)
+        try:
+            ann = parse_annotation_line(line, task_type, kpt_shape)
+        except (ValueError, IndexError) as e:
+            print(f"Gecersiz etiket satiri atlandi {path}:{i + 1}: {e}")
+            continue
         if ann is not None:
             # Deterministik UID: ayni dosyayi okuyan her instance ayni UID alir
             ann.uid = _deterministic_uid(i, line)

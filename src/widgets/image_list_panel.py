@@ -36,6 +36,7 @@ class ImageListPanel(QDockWidget):
     image_selected   = Signal(object)   # ImageItem
     import_requested = Signal(str)     # split adı
     tab_clicked      = Signal(str)     # Kullanıcı bir tab butonuna tıkladığında (split adı)
+    image_delete_requested = Signal(object)  # ImageItem
 
     def __init__(self, parent=None):
         super().__init__("Görseller", parent)
@@ -214,6 +215,15 @@ class ImageListPanel(QDockWidget):
                 self._list.scrollToItem(item, self._list.ScrollHint.EnsureVisible)
                 break
 
+    def current_image(self):
+        """Listede secili olan gorseli dondurur."""
+        item = self._list.currentItem()
+        return item.data(self._ROLE_IMG) if item else None
+
+    def has_list_focus(self) -> bool:
+        """Klavye odaginin gorsel listesinde olup olmadigini dondurur."""
+        return self._list.hasFocus()
+
     # ── Tab yönetimi ──────────────────────────────────────────────────────────
 
     def _on_tab_clicked(self, split: str):
@@ -281,6 +291,11 @@ class ImageListPanel(QDockWidget):
                               ("test", "Test"), ("unassigned", "Atanmamış")]:
             action = menu.addAction(f"{label} olarak ata")
             action.triggered.connect(lambda checked=False, s=split, i=img: self._set_split(i, s))
+        menu.addSeparator()
+        delete_action = menu.addAction("Görseli Sil")
+        delete_action.triggered.connect(
+            lambda checked=False, i=img: self.image_delete_requested.emit(i)
+        )
         menu.exec(self._list.viewport().mapToGlobal(pos))
 
     def _set_split(self, image_item, split: str):

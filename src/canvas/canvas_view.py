@@ -1,4 +1,4 @@
-"""QGraphicsView: zoom, pan ve arac yonlendirme."""
+﻿"""QGraphicsView: zoom, pan ve arac yonlendirme."""
 
 from PySide6.QtWidgets import QGraphicsView, QGraphicsPixmapItem, QGraphicsTextItem
 from PySide6.QtCore import Qt, Signal, QPointF, QEvent
@@ -14,10 +14,11 @@ class CanvasView(QGraphicsView):
     zoom_changed = Signal(float)
     # Bir annotation item'ina sag tik yapildiginda emit edilir: (item, global_pos)
     context_menu_requested = Signal(object, object)
-    # Hover üzerindeyken Del tuşuna basıldığında emit edilir: (canvas_item)
+    # Eski hover silme sinyali; geriye uyumluluk icin tutuluyor.
     delete_hovered_item_requested = Signal(object)
+    delete_image_requested = Signal()
 
-    # Fare sürükleme eşiği (viewport piksel): bu kadar hareket → pan; daha az → tıklama
+    # Fare sÃ¼rÃ¼kleme eÅŸiÄŸi (viewport piksel): bu kadar hareket â†’ pan; daha az â†’ tÄ±klama
     _DRAG_PAN_THRESHOLD = 5
 
     def __init__(self, scene: CanvasScene, parent=None):
@@ -32,7 +33,7 @@ class CanvasView(QGraphicsView):
         # Cizim araclari icin bekleyen tiklama (drag mi, click mi tespiti)
         self._pending_click_pos = None        # viewport pos
         self._pending_click_scene_pos = None  # scene pos
-        self._hovered_annotation_item = None  # Mouse altındaki annotation item (hover)
+        self._hovered_annotation_item = None  # Mouse altÄ±ndaki annotation item (hover)
 
         # Render ayarlari
         self.setRenderHints(
@@ -47,11 +48,11 @@ class CanvasView(QGraphicsView):
         self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self.setBackgroundBrush(QColor("#2b2b2b"))
         self.setMouseTracking(True)
-        # Viewport'ta da mouse tracking açık olmalı, yoksa buton basılı
+        # Viewport'ta da mouse tracking aÃ§Ä±k olmalÄ±, yoksa buton basÄ±lÄ±
         # olmadan mouseMoveEvent tetiklenmez
         self.viewport().setMouseTracking(True)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
-        # Viewport event'lerini yakala: Enter → focus al, Del → hover sil
+        # Viewport event'lerini yakala: Enter â†’ focus al, Del â†’ hover sil
         self.viewport().installEventFilter(self)
 
     def set_tool(self, tool):
@@ -104,10 +105,10 @@ class CanvasView(QGraphicsView):
         Arkaplan pixmap ve etiket metinleri (mouse'u kabul etmeyen) sayilmaz.
         """
         for item in self.scene().items(scene_pos):
-            # Arkaplan ve etiket metinleri → atla
+            # Arkaplan ve etiket metinleri â†’ atla
             if isinstance(item, (QGraphicsPixmapItem, QGraphicsTextItem)):
                 continue
-            # Mouse tuslarini kabul etmeyen item → atla
+            # Mouse tuslarini kabul etmeyen item â†’ atla
             if item.acceptedMouseButtons() == Qt.MouseButton.NoButton:
                 continue
             return True
@@ -122,7 +123,7 @@ class CanvasView(QGraphicsView):
         event.accept()
 
     def contextMenuEvent(self, event):
-        """Sağ tık: annotation item varsa context_menu_requested sinyali gönder."""
+        """SaÄŸ tÄ±k: annotation item varsa context_menu_requested sinyali gÃ¶nder."""
         scene_pos = self.mapToScene(event.pos())
         items = self.scene().items(scene_pos)
         for item in items:
@@ -133,7 +134,7 @@ class CanvasView(QGraphicsView):
         event.ignore()
 
     def mousePressEvent(self, event: QMouseEvent):
-        # Orta tuş → her zaman pan
+        # Orta tuÅŸ â†’ her zaman pan
         if event.button() == Qt.MouseButton.MiddleButton:
             self._start_pan(event)
             return
@@ -143,8 +144,8 @@ class CanvasView(QGraphicsView):
 
             if self._active_tool:
                 if getattr(self._active_tool, 'use_qt_selection', False):
-                    # SelectTool: item'e tik → Qt seçim
-                    # Boş alana tik → bekle (click=deselect / drag=pan; eşik moveMoveEvent'te)
+                    # SelectTool: item'e tik â†’ Qt seÃ§im
+                    # BoÅŸ alana tik â†’ bekle (click=deselect / drag=pan; eÅŸik moveMoveEvent'te)
                     if self._has_interactive_item_at(scene_pos):
                         super().mousePressEvent(event)
                     else:
@@ -163,34 +164,33 @@ class CanvasView(QGraphicsView):
         if obj is self.viewport():
             t = event.type()
             if t == QEvent.Type.Enter:
-                # Mouse viewport'a girdiğinde klavye odağını al
+                # Mouse viewport'a girdiÄŸinde klavye odaÄŸÄ±nÄ± al
                 self.viewport().setFocus(Qt.FocusReason.OtherFocusReason)
             elif t == QEvent.Type.KeyPress:
                 ke = event
                 if ke.key() in (Qt.Key.Key_Delete, Qt.Key.Key_Backspace):
-                    if self._hovered_annotation_item is not None:
-                        self.delete_hovered_item_requested.emit(self._hovered_annotation_item)
-                        ke.accept()
-                        return True   # Başka hiçbir handler görmeden bitir
+                    self.delete_image_requested.emit()
+                    ke.accept()
+                    return True
         return super().eventFilter(obj, event)
 
     def mouseMoveEvent(self, event: QMouseEvent):
         scene_pos = self.mapToScene(event.pos())
         self.mouse_scene_pos_changed.emit(scene_pos.x(), scene_pos.y())
         self._crosshair_pos = event.pos()
-        # Hover altındaki annotation item'ı takip et (seçmeden Del için)
+        # Hover altÄ±ndaki annotation item'Ä± takip et (seÃ§meden Del iÃ§in)
         self._update_hovered_item(scene_pos)
 
         if self._panning:
             self._do_pan(event)
             return
 
-        # Bekleyen tiklama varsa: drag mı click mı kontrol et
+        # Bekleyen tiklama varsa: drag mÄ± click mÄ± kontrol et
         if self._pending_click_pos is not None and \
                 (event.buttons() & Qt.MouseButton.LeftButton):
             delta = (event.pos() - self._pending_click_pos).manhattanLength()
             if delta > self._DRAG_PAN_THRESHOLD:
-                # Drag tespit edildi → pan moduna gec, tiklama iptal
+                # Drag tespit edildi â†’ pan moduna gec, tiklama iptal
                 self._pending_click_pos = None
                 self._pending_click_scene_pos = None
                 self._start_pan(event)
@@ -215,21 +215,21 @@ class CanvasView(QGraphicsView):
             self.viewport().update()
 
     def mouseReleaseEvent(self, event: QMouseEvent):
-        # Orta tuş veya sol tuş pan bitti
+        # Orta tuÅŸ veya sol tuÅŸ pan bitti
         if self._panning and event.button() in (
             Qt.MouseButton.MiddleButton, Qt.MouseButton.LeftButton
         ):
             self._end_pan()
             return
 
-        # Bekleyen tiklama: drag olmadi → click olarak isle
+        # Bekleyen tiklama: drag olmadi â†’ click olarak isle
         if self._pending_click_pos is not None and \
                 event.button() == Qt.MouseButton.LeftButton:
             scene_pos = self._pending_click_scene_pos
             self._pending_click_pos = None
             self._pending_click_scene_pos = None
             if self._active_tool and getattr(self._active_tool, 'use_qt_selection', False):
-                # SelectTool: boş alana tık → seçimi kaldır
+                # SelectTool: boÅŸ alana tÄ±k â†’ seÃ§imi kaldÄ±r
                 self._scene.clearSelection()
             elif self._active_tool:
                 self._active_tool.mouse_press(event, scene_pos)
@@ -261,12 +261,11 @@ class CanvasView(QGraphicsView):
         if event.key() == Qt.Key.Key_Space and not event.isAutoRepeat():
             self.setCursor(Qt.CursorShape.OpenHandCursor)
 
-        # Del/Backspace: hover altındaki etiket varsa seçmeden sil
+        # Del/Backspace: o anda yuklu olan gorseli sil.
         if event.key() in (Qt.Key.Key_Delete, Qt.Key.Key_Backspace):
-            if self._hovered_annotation_item is not None:
-                self.delete_hovered_item_requested.emit(self._hovered_annotation_item)
-                event.accept()
-                return
+            self.delete_image_requested.emit()
+            event.accept()
+            return
 
         if self._active_tool:
             self._active_tool.key_press(event)
@@ -281,7 +280,7 @@ class CanvasView(QGraphicsView):
 
     # --- Hover item takibi ---
     def _update_hovered_item(self, scene_pos):
-        """Mouse altındaki annotation item'ı günceller (seçmeden Del için)."""
+        """Mouse altÄ±ndaki annotation item'Ä± gÃ¼nceller (seÃ§meden Del iÃ§in)."""
         found = None
         for item in self.scene().items(scene_pos):
             if isinstance(item, (QGraphicsPixmapItem, QGraphicsTextItem)):

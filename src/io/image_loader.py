@@ -1,9 +1,18 @@
 """Async gorsel yukleme ve LRU onbellegi."""
 
-from pathlib import Path
 from collections import OrderedDict
-from PySide6.QtGui import QPixmap
+from PySide6.QtGui import QImageReader, QPixmap
 from PySide6.QtCore import QObject, Signal, QRunnable, QThreadPool, QMutex
+
+
+def load_pixmap(path: str) -> QPixmap:
+    """Gorseli EXIF yon bilgisini uygulayarak QPixmap olarak yukler."""
+    reader = QImageReader(path)
+    reader.setAutoTransform(True)
+    image = reader.read()
+    if image.isNull():
+        return QPixmap()
+    return QPixmap.fromImage(image)
 
 
 class ImageLoader(QObject):
@@ -34,7 +43,7 @@ class ImageLoader(QObject):
         cached = self._get_cached(path)
         if cached:
             return cached
-        pixmap = QPixmap(path)
+        pixmap = load_pixmap(path)
         if not pixmap.isNull():
             self._put_cache(path, pixmap)
         return pixmap
@@ -87,5 +96,5 @@ class _LoadTask(QRunnable):
         self.setAutoDelete(True)
 
     def run(self):
-        pixmap = QPixmap(self._path)
+        pixmap = load_pixmap(self._path)
         self._callback(self._path, pixmap)

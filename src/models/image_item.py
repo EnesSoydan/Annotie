@@ -58,10 +58,11 @@ class ImageItem:
         try:
             from PySide6.QtGui import QImageReader
             reader = QImageReader(str(self.path))
-            size = reader.size()
-            if size.isValid():
-                self.width = size.width()
-                self.height = size.height()
+            reader.setAutoTransform(True)
+            image = reader.read()
+            if not image.isNull():
+                self.width = image.width()
+                self.height = image.height()
                 self._dimensions_loaded = True
         except Exception:
             pass

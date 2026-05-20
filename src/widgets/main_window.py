@@ -3,7 +3,7 @@
 from PySide6.QtWidgets import (
     QMainWindow, QStatusBar, QDockWidget, QFileDialog,
     QMessageBox, QLabel, QWidget, QMenu, QStyle, QGraphicsOpacityEffect,
-    QProgressDialog
+    QProgressDialog, QPushButton
 )
 from PySide6.QtCore import Qt, QTimer, QPointF, QPropertyAnimation, QEasingCurve, QThread, Signal
 from PySide6.QtGui import QAction, QKeySequence, QShortcut
@@ -69,6 +69,7 @@ class MainWindow(QMainWindow):
         self._dataset = None
         self._canvas_focus = False   # Gorsel odak modu aktif mi
         self._active_toasts = []     # Aktif toast bildirimleri
+        self._active_delete_undos = []  # Gorsel silme geri alma butonlari
 
         self._setup_ui()
         self._setup_controllers()
@@ -289,6 +290,7 @@ class MainWindow(QMainWindow):
         self.image_list_panel.image_selected.connect(self.ds_ctrl.load_image)
         self.image_list_panel.import_requested.connect(self._on_import_images_for_split)
         self.image_list_panel.tab_clicked.connect(self._on_split_tab_clicked)
+        self.image_list_panel.image_delete_requested.connect(self._on_delete_image_requested)
         self.class_panel.class_selected.connect(self.ann_ctrl.set_active_class)
         self.class_panel.class_changed.connect(self._on_class_changed)
         self.class_panel.class_added.connect(self._on_class_added_collab)
@@ -303,6 +305,7 @@ class MainWindow(QMainWindow):
         self.scene.selectionChanged.connect(self._on_canvas_selection_changed)
         self.canvas_view.context_menu_requested.connect(self._on_annotation_context_menu)
         self.canvas_view.delete_hovered_item_requested.connect(self._on_delete_hovered_item)
+        self.canvas_view.delete_image_requested.connect(self._on_delete)
         self._undo_stack.canUndoChanged.connect(
             lambda can: self.action_undo.setEnabled(can)
         )
@@ -594,6 +597,27 @@ class MainWindow(QMainWindow):
         effective = split if split != "all" else "unassigned"
         self._on_import_images(default_split=effective)
 
+    def _on_delete_image_requested(self, image):
+        """Sol panelden secilen gorseli diskten siler."""
+        if not image or not self._dataset:
+            return
+
+        ok, message, delete_record = self.ds_ctrl.delete_image_from_disk(image)
+        if ok:
+            self.image_list_panel.load_images(self._dataset.get_all_images())
+            current = getattr(self.ds_ctrl, "_current_image", None)
+            if current:
+                self.image_list_panel.select_image_silent(current)
+            self._show_delete_undo(delete_record)
+        else:
+            QMessageBox.critical(self, "Silme Hatası", message)
+
+    def _on_delete_current_image(self):
+        """O anda yuklu olan gorseli siler."""
+        image = getattr(self.ds_ctrl, "_current_image", None)
+        if image:
+            self._on_delete_image_requested(image)
+
     def _on_export(self):
         if not self._dataset:
             QMessageBox.information(self, "Bilgi", "Önce bir veri seti açın.")
@@ -650,7 +674,10 @@ class MainWindow(QMainWindow):
         self._undo_stack.redo()
 
     def _on_delete(self):
-        self.ann_ctrl.delete_selected()
+        if self.scene.selectedItems():
+            self.ann_ctrl.delete_selected()
+            return
+        self._on_delete_current_image()
 
     def _on_settings(self):
         dlg = SettingsDialog(self.config, self)
@@ -870,6 +897,11 @@ class MainWindow(QMainWindow):
                     return
         event.accept()
 
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if hasattr(self, "canvas_view"):
+            self._reposition_delete_undos()
+
     # ─── Toast Bildirimleri ───────────────────────────────────────────────────
 
     def _show_toast(self, message: str, is_error: bool = False, duration: int = 4000):
@@ -922,6 +954,116 @@ class MainWindow(QMainWindow):
 
         anim.finished.connect(_remove)
         QTimer.singleShot(duration, anim.start)
+
+    def _show_delete_undo(self, delete_record):
+        """Silinen gorsel icin kisa sureli geri alma butonu gosterir."""
+        if not delete_record:
+            return
+
+        while len(self._active_delete_undos) >= 3:
+            self._dismiss_delete_undo(self._active_delete_undos[0], animate=False)
+
+        btn = QPushButton("Geri al", self.canvas_view)
+        btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn.setStyleSheet("""
+            QPushButton {
+                background: rgba(20, 20, 20, 225);
+                color: #ffffff;
+                border: 1px solid #2ecc71;
+                border-radius: 5px;
+                padding: 8px 16px;
+                font-size: 12px;
+                font-weight: bold;
+            }
+            QPushButton:hover { background: rgba(35, 35, 35, 240); }
+            QPushButton:pressed { background: rgba(10, 10, 10, 245); }
+        """)
+        btn.adjustSize()
+        btn.show()
+        btn.raise_()
+
+        effect = QGraphicsOpacityEffect(btn)
+        btn.setGraphicsEffect(effect)
+
+        timer = QTimer(self)
+        timer.setSingleShot(True)
+        entry = {
+            "button": btn,
+            "record": delete_record,
+            "timer": timer,
+            "expired": False,
+            "animation": None,
+        }
+
+        btn.clicked.connect(lambda checked=False, e=entry: self._undo_deleted_image(e))
+        timer.timeout.connect(lambda e=entry: self._expire_delete_undo(e))
+        self._active_delete_undos.append(entry)
+        self._reposition_delete_undos()
+        timer.start(1600)
+
+    def _undo_deleted_image(self, entry):
+        if entry.get("expired"):
+            return
+        ok, message = self.ds_ctrl.restore_deleted_image(entry.get("record"))
+        self._dismiss_delete_undo(entry, animate=False)
+        if ok:
+            self.image_list_panel.load_images(self._dataset.get_all_images())
+            current = getattr(self.ds_ctrl, "_current_image", None)
+            if current:
+                self.image_list_panel.select_image_silent(current)
+            self._show_toast(message, is_error=False, duration=2500)
+        else:
+            QMessageBox.critical(self, "Geri Alma Hatası", message)
+
+    def _expire_delete_undo(self, entry):
+        entry["expired"] = True
+        self._dismiss_delete_undo(entry, animate=True)
+
+    def _dismiss_delete_undo(self, entry, animate: bool):
+        if entry not in self._active_delete_undos:
+            return
+
+        self._active_delete_undos.remove(entry)
+        timer = entry.get("timer")
+        if timer:
+            timer.stop()
+            timer.deleteLater()
+
+        btn = entry.get("button")
+        if not btn:
+            self._reposition_delete_undos()
+            return
+
+        if not animate:
+            btn.deleteLater()
+            self._reposition_delete_undos()
+            return
+
+        effect = btn.graphicsEffect()
+        anim = QPropertyAnimation(effect, b"opacity", btn)
+        anim.setStartValue(1.0)
+        anim.setEndValue(0.0)
+        anim.setDuration(400)
+        anim.setEasingCurve(QEasingCurve.Type.InQuad)
+        entry["animation"] = anim
+        anim.finished.connect(btn.deleteLater)
+        anim.start()
+        self._reposition_delete_undos()
+
+    def _reposition_delete_undos(self):
+        if not hasattr(self, "canvas_view"):
+            return
+        margin = 14
+        y = self.canvas_view.height() - margin
+        for entry in reversed(self._active_delete_undos):
+            btn = entry.get("button")
+            if not btn:
+                continue
+            btn.adjustSize()
+            y -= btn.height()
+            x = self.canvas_view.width() - btn.width() - margin
+            btn.move(max(0, x), max(0, y))
+            y -= 6
 
     # ─── Tema ─────────────────────────────────────────────────────────────────
 

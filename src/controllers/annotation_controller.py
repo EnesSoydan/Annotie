@@ -82,6 +82,28 @@ class AnnotationController(QObject):
         self.annotations_loaded.emit(image_item)
         self._notify_change()
 
+    def clear_current_image(self):
+        """Mevcut gorsel ve annotation durumunu temizler."""
+        self.discard_pending_save(self._current_image)
+        self._current_image = None
+        self._undo_stack.clear()
+        self.scene.clear_all()
+        self._item_to_ann.clear()
+        self._ann_to_item.clear()
+        if self._annotation_list_panel:
+            classes = self._dataset.classes if self._dataset else []
+            self._annotation_list_panel.load_annotations([], classes)
+        window = self._get_main_window()
+        if window:
+            window.update_annotation_count(0)
+        self.annotations_loaded.emit(None)
+
+    def discard_pending_save(self, image_item):
+        """Silinen gorsel icin bekleyen debounce kaydini iptal eder."""
+        if image_item is not None and self._pending_save_image is image_item:
+            self._save_timer.stop()
+            self._pending_save_image = None
+
     def _create_canvas_item(self, ann, img_w: int, img_h: int):
         """Bir annotation modelinden canvas item olusturur."""
         if self._dataset is None:
