@@ -140,19 +140,24 @@ class CollabController(QObject):
 
         self._client.connected.connect(_on_connected)
 
-    def join_dataset_room(self, server_url: str, room_id: str, display_name: str):
+    def join_dataset_room(self, server_url: str, room_id: str, display_name: str,
+                          token: str = None):
         """Ekip dataseti için odaya katıl (join-or-create). Manifest'ten dataset
-        kurma YOK — dataset zaten DB'den açık. Sadece presence + canlı op senkron."""
+        kurma YOK — dataset zaten DB'den açık. Sadece presence + canlı op senkron.
+        token: relay auth etkinse Supabase access token (üyelik doğrulaması)."""
         self._display_name = display_name
         self._team_mode = True
         self._client.connect_to_server(server_url)
 
         def _on_connected():
-            self._client.send({
+            msg = {
                 "type": MsgType.JOIN_ROOM,
                 "room_id": room_id,
                 "display_name": display_name,
-            })
+            }
+            if token:
+                msg["token"] = token
+            self._client.send(msg)
             try:
                 self._client.connected.disconnect(_on_connected)
             except RuntimeError:

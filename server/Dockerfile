@@ -4,7 +4,7 @@ FROM python:3.12-slim
 WORKDIR /app
 
 # Bağımlılıklar (sabit; requirements.txt değişse de çalışsın)
-RUN pip install --no-cache-dir fastapi "uvicorn[standard]" websockets
+RUN pip install --no-cache-dir fastapi "uvicorn[standard]" websockets httpx
 
 # Kaynak kodu kopyala
 COPY . .

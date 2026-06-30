@@ -239,8 +239,15 @@ class AccountController(QObject):
             try:
                 u = self._auth.user
                 dn = u.display_name or u.username or u.email or "Kullanıcı"
+                token = None
+                try:
+                    sess = supabase_client.get_client().auth.get_session()
+                    token = sess.access_token if sess else None
+                except Exception:
+                    token = None
                 self.mw.collab_ctrl.set_dataset(dset)
-                self.mw.collab_ctrl.join_dataset_room(self._collab_url(), ds["id"], dn)
+                self.mw.collab_ctrl.join_dataset_room(
+                    self._collab_url(), ds["id"], dn, token=token)
             except Exception:
                 pass
 

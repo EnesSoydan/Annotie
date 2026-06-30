@@ -5,8 +5,10 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 from typing import Dict, Set
 
+import httpx
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from contextlib import asynccontextmanager
 
@@ -15,6 +17,34 @@ from protocol import validate_message
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("annotie-relay")
+
+# Opsiyonel kimlik doğrulama: bu env'ler verilirse join_room'da kullanıcının
+# Supabase token'ı + ekip üyeliği doğrulanır. Verilmezse açık mod (LAN/test).
+SUPABASE_URL = os.environ.get("SUPABASE_URL")
+SUPABASE_ANON_KEY = os.environ.get("SUPABASE_ANON_KEY")
+AUTH_ENABLED = bool(SUPABASE_URL and SUPABASE_ANON_KEY)
+
+
+async def verify_team_access(token: str, room_id: str) -> bool:
+    """Token geçerli mi ve kullanıcı bu dataseti (room_id) görebilen ekip üyesi mi?
+    Tek bir PostgREST çağrısı hem token'ı doğrular (geçersizse 401) hem de
+    RLS ile üyeliği kontrol eder (üye değilse boş döner)."""
+    if not AUTH_ENABLED:
+        return True
+    if not token:
+        return False
+    try:
+        async with httpx.AsyncClient(timeout=8.0) as client:
+            r = await client.get(
+                f"{SUPABASE_URL}/rest/v1/datasets",
+                headers={"apikey": SUPABASE_ANON_KEY,
+                         "Authorization": f"Bearer {token}"},
+                params={"id": f"eq.{room_id}", "select": "team_id"},
+            )
+        return r.status_code == 200 and len(r.json()) > 0
+    except Exception as exc:
+        logger.warning(f"Yetki doğrulama hatası: {exc}")
+        return False
 
 manager = LobbyManager()
 
@@ -86,6 +116,11 @@ async def handle_join_room(ws: WebSocket, msg: dict):
     room_id = str(msg["room_id"]).strip()
     display_name = msg["display_name"]
     manifest = msg.get("manifest")
+
+    # Kimlik doğrulama (etkinse): token + ekip üyeliği
+    if not await verify_team_access(msg.get("token"), room_id):
+        await send_error(ws, "Bu ekip datasetine erişim yetkiniz yok")
+        return
 
     user_id, color, existing_manifest = manager.join_or_create(
         room_id, display_name, manifest)
