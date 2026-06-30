@@ -28,13 +28,25 @@ class DatasetController(QObject):
         self._split_positions = {
             "all": -1, "train": -1, "val": -1, "test": -1, "unassigned": -1
         }
+        # Cloud lazy indirme kancası: load_image_at içinde, görsel diske
+        # okunmadan önce çağrılır (ekip dataseti için görseli R2'den indirir).
+        self._ensure_local = None
 
     @property
     def dataset(self) -> Dataset:
         return self._dataset
 
+    def set_ensure_local(self, callback):
+        """Görsel yüklenmeden önce çalışacak indirme kancası (veya None)."""
+        self._ensure_local = callback
+
+    def load_external_dataset(self, dataset: Dataset):
+        """Dışarıda kurulmuş bir Dataset nesnesini yükler (cloud lazy için)."""
+        self._load_dataset(dataset)
+
     def open_dataset(self, path: str):
         """YOLO veriseti klasorunu ac."""
+        self._ensure_local = None   # yerel dataset: indirme kancası kapalı
         dataset = import_dataset(path)
         if dataset is None:
             self.error_occurred.emit(f"Veriseti acilamadi: {path}")
@@ -43,6 +55,7 @@ class DatasetController(QObject):
 
     def open_folder(self, path: str):
         """Duz gorsel klasorunu ac (gecici mod)."""
+        self._ensure_local = None
         dataset = import_folder(path)
         if dataset is None:
             self.error_occurred.emit(f"Klasor acilamadi: {path}")
@@ -105,6 +118,13 @@ class DatasetController(QObject):
             img_panel = getattr(self._window, 'image_list_panel', None)
             if img_panel:
                 img_panel.refresh_item(image)
+
+        # Cloud lazy: görsel diskte yoksa indir (ekip dataseti)
+        if self._ensure_local is not None:
+            try:
+                self._ensure_local(image)
+            except Exception:
+                pass
 
         # Gorseli canvas'a yukle
         image.load_dimensions()

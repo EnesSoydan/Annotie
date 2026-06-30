@@ -54,6 +54,7 @@ from src.widgets.collab_overlay import CollabOverlay
 from src.controllers.annotation_controller import AnnotationController
 from src.controllers.dataset_controller import DatasetController
 from src.controllers.autosave_controller import AutosaveController
+from src.controllers.account_controller import AccountController
 from src.collab.collab_controller import CollabController
 from src.io.dataset_exporter import create_dataset_structure
 from src.utils.config import AppConfig
@@ -80,6 +81,9 @@ class MainWindow(QMainWindow):
         self._connect_signals()
         self._restore_window_state()
         self._apply_dark_theme()
+
+        # Kayitli bulut oturumu varsa arka planda geri yukle (Faz 2)
+        self.account_ctrl.start()
 
     # ─── UI Kurulum ───────────────────────────────────────────────────────────
 
@@ -137,6 +141,9 @@ class MainWindow(QMainWindow):
         self.collab_ctrl.set_controllers(self.ann_ctrl, self.ds_ctrl)
         self.collab_ctrl.set_main_window(self)
 
+        # Hesap (opsiyonel giris/kayit) kontrolcusu — Faz 2
+        self.account_ctrl = AccountController(self)
+
     def _write_image_labels(self, image):
         if self._dataset:
             from src.io.label_writer import write_label_file
@@ -144,6 +151,12 @@ class MainWindow(QMainWindow):
             if label_path:
                 write_label_file(label_path, image.annotations)
                 image.mark_clean()
+                # Tüm kayıt yolları (anlık/otomatik/menü) DB write-through tetiklesin
+                # (ekip dataseti aktifse account_ctrl bunu DB'ye gönderir)
+                try:
+                    self.ds_ctrl.image_saved.emit(image)
+                except Exception:
+                    pass
 
     # ─── Araclar ──────────────────────────────────────────────────────────────
 
@@ -227,6 +240,9 @@ class MainWindow(QMainWindow):
         collab_menu = mb.addMenu("&Isbirligi")
         self._add_action(collab_menu, "Isbirligi Panelini Goster", None,
                          lambda: (self.collab_panel.show(), self.collab_panel.raise_()))
+
+        # Hesap menusu (opsiyonel giris/kayit) — Faz 2
+        self.account_ctrl.build_menu(mb)
 
         help_menu = mb.addMenu("&Yardım")
         self._add_action(help_menu, "Kısayollar", "F1", self._on_shortcuts)
