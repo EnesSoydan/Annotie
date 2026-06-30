@@ -69,7 +69,7 @@ presigned URL üretir. ~15 dakika.
 **Yöntem B — CLI ile (Supabase CLI kuruluysa):**
 
 ```bash
-supabase functions deploy storage-presign --project-ref ckjnkvrsdyybzyvdmszm
+supabase functions deploy storage-presign --project-ref YOUR-PROJECT-REF
 ```
 
 > `verify_jwt` varsayılan olarak **açık** kalmalı — fonksiyon yalnızca giriş yapmış

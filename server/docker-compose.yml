@@ -9,5 +9,5 @@ services:
     # aşağıdaki iki satırın yorumunu kaldırıp değerleri girin. Verilmezse
     # relay açık moddadır (LAN/test). Sadece anon/publishable key kullanın.
     # environment:
-    #   SUPABASE_URL: "https://ckjnkvrsdyybzyvdmszm.supabase.co"
+    #   SUPABASE_URL: "https://YOUR-PROJECT-REF.supabase.co"
     #   SUPABASE_ANON_KEY: "sb_publishable_..."

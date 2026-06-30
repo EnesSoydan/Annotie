@@ -95,7 +95,7 @@ Windows'ta proje kökündeki `cloud_config.json` dosyasına `collab_url` ekle:
 
 ```json
 {
-  "url": "https://ckjnkvrsdyybzyvdmszm.supabase.co",
+  "url": "https://YOUR-PROJECT-REF.supabase.co",
   "anon_key": "sb_publishable_...",
   "collab_url": "ws://SUNUCU_IP:8765/ws"
 }
