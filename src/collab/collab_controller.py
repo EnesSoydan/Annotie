@@ -50,6 +50,7 @@ class CollabController(QObject):
         self._display_name: Optional[str] = None
 
         self._applying_remote = False
+        self._team_mode = False   # ekip dataseti odası (manifest'ten dataset kurma yok)
 
         # Modify throttle
         self._last_modify_time = {}
@@ -139,7 +140,28 @@ class CollabController(QObject):
 
         self._client.connected.connect(_on_connected)
 
+    def join_dataset_room(self, server_url: str, room_id: str, display_name: str):
+        """Ekip dataseti için odaya katıl (join-or-create). Manifest'ten dataset
+        kurma YOK — dataset zaten DB'den açık. Sadece presence + canlı op senkron."""
+        self._display_name = display_name
+        self._team_mode = True
+        self._client.connect_to_server(server_url)
+
+        def _on_connected():
+            self._client.send({
+                "type": MsgType.JOIN_ROOM,
+                "room_id": room_id,
+                "display_name": display_name,
+            })
+            try:
+                self._client.connected.disconnect(_on_connected)
+            except RuntimeError:
+                pass
+
+        self._client.connected.connect(_on_connected)
+
     def leave_lobby(self):
+        self._team_mode = False
         if self._lobby_id:
             self._client.send({"type": MsgType.LEAVE_LOBBY})
         self._client.disconnect_from_server()
@@ -317,9 +339,12 @@ class CollabController(QObject):
         self._lobby_id = msg["lobby_id"]
         self._user_id = msg["user_id"]
         self._user_color = msg.get("color")
-        manifest = msg.get("manifest")
         self._presence.set_my_user_id(self._user_id)
-        _dbg(f"Lobiye katılındı: {self._lobby_id}")
+        _dbg(f"Lobiye katılındı: {self._lobby_id} (team={self._team_mode})")
+        if self._team_mode:
+            # Ekip modu: dataset zaten açık; manifest'ten yeniden kurma.
+            return
+        manifest = msg.get("manifest")
         self.lobby_joined.emit(self._lobby_id, manifest or {})
 
     def _handle_user_joined(self, msg: dict):

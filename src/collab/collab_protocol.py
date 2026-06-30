@@ -8,6 +8,7 @@ class MsgType:
     # Client -> Server
     CREATE_LOBBY = "create_lobby"
     JOIN_LOBBY = "join_lobby"
+    JOIN_ROOM = "join_room"        # ekip dataseti odası (join-or-create)
     LEAVE_LOBBY = "leave_lobby"
     HEARTBEAT = "heartbeat"
     IMAGE_FOCUS = "image_focus"

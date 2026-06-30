@@ -5,7 +5,7 @@ from typing import Optional
 
 # Client -> Server mesaj tipleri
 CLIENT_TYPES = {
-    "create_lobby", "join_lobby", "leave_lobby",
+    "create_lobby", "join_lobby", "join_room", "leave_lobby",
     "heartbeat", "image_focus",
     "ann_create", "ann_delete", "ann_modify", "ann_class_change",
     "class_add", "class_rename", "class_delete",
@@ -23,6 +23,7 @@ SERVER_TYPES = {
 REQUIRED_FIELDS = {
     "create_lobby": ["display_name"],
     "join_lobby": ["lobby_id", "display_name"],
+    "join_room": ["room_id", "display_name"],
     "leave_lobby": [],
     "heartbeat": [],
     "image_focus": ["image_stem"],

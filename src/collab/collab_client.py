@@ -52,12 +52,21 @@ class CollabClient(QObject):
     def is_connected(self) -> bool:
         return self._is_connected
 
+    @staticmethod
+    def _build_ws_url(url: str) -> str:
+        """Sunucu URL'inden ws endpoint'i kurar. Zaten /ws ile bitiyorsa
+        tekrar eklemez (ws://host:8765 ve ws://host:8765/ws ikisi de çalışır)."""
+        u = url.rstrip("/")
+        if u.endswith("/ws"):
+            return u
+        return u + "/ws"
+
     def connect_to_server(self, url: str):
         """Sunucuya bağlanır."""
         self._server_url = url
         self._should_reconnect = True
         self._retry_count = 0
-        ws_url = url.rstrip("/") + "/ws"
+        ws_url = self._build_ws_url(url)
         logger.info(f"Bağlanılıyor: {ws_url}")
         self._ws.open(QUrl(ws_url))
 
@@ -130,7 +139,7 @@ class CollabClient(QObject):
     def _try_reconnect(self):
         if not self._should_reconnect:
             return
-        ws_url = self._server_url.rstrip("/") + "/ws"
+        ws_url = self._build_ws_url(self._server_url)
         self._ws.open(QUrl(ws_url))
 
     def _flush_queue(self):

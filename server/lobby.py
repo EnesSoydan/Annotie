@@ -72,6 +72,25 @@ class LobbyManager:
         self._lobbies[lobby_id] = lobby
         return lobby_id, user_id, color
 
+    def join_or_create(self, room_id: str, display_name: str,
+                       manifest: dict = None) -> tuple:
+        """Sabit kimlikli odaya katılır; oda yoksa o kimlikle oluşturur.
+        Ekip dataseti için: tüm üyeler dataset_id'ye eşit room_id ile aynı odada.
+        (user_id, user_color, manifest) döndürür."""
+        lobby = self._lobbies.get(room_id)
+        user_id = str(uuid.uuid4())[:8]
+        if lobby is None:
+            color = USER_COLORS[0]
+            user = User(user_id=user_id, display_name=display_name, color=color)
+            lobby = Lobby(lobby_id=room_id, host_id=user_id, manifest=manifest)
+            lobby.users[user_id] = user
+            self._lobbies[room_id] = lobby
+            return user_id, color, lobby.manifest
+        color = USER_COLORS[len(lobby.users) % len(USER_COLORS)]
+        user = User(user_id=user_id, display_name=display_name, color=color)
+        lobby.users[user_id] = user
+        return user_id, color, lobby.manifest
+
     def join_lobby(self, lobby_id: str, display_name: str) -> tuple:
         """Lobiye katılır. (user_id, user_color, manifest) döndürür veya hata fırlatır."""
         lobby = self._lobbies.get(lobby_id)

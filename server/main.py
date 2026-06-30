@@ -81,6 +81,39 @@ async def handle_create_lobby(ws: WebSocket, msg: dict):
     logger.info(f"Lobi oluşturuldu: {lobby_id} (host: {display_name})")
 
 
+async def handle_join_room(ws: WebSocket, msg: dict):
+    """Ekip dataseti odası: room_id (=dataset_id) ile join-or-create."""
+    room_id = str(msg["room_id"]).strip()
+    display_name = msg["display_name"]
+    manifest = msg.get("manifest")
+
+    user_id, color, existing_manifest = manager.join_or_create(
+        room_id, display_name, manifest)
+
+    manager.register_connection(id(ws), room_id, user_id)
+    lobby_connections.setdefault(room_id, set()).add(ws)
+
+    await send_json(ws, {
+        "type": "lobby_joined",
+        "lobby_id": room_id,
+        "user_id": user_id,
+        "color": color,
+        "manifest": existing_manifest,
+    })
+    await broadcast_to_lobby(room_id, {
+        "type": "user_joined",
+        "user_id": user_id,
+        "display_name": display_name,
+        "color": color,
+    }, exclude_ws=ws)
+    presence = manager.get_presence_list(room_id)
+    await broadcast_to_lobby(room_id, {
+        "type": "presence_update",
+        "users": presence,
+    })
+    logger.info(f"Oda katılım: {room_id} ({display_name})")
+
+
 async def handle_join_lobby(ws: WebSocket, msg: dict):
     lobby_id = msg["lobby_id"].upper().strip()
     display_name = msg["display_name"]
@@ -216,6 +249,8 @@ async def websocket_endpoint(ws: WebSocket):
                 await handle_create_lobby(ws, msg)
             elif msg_type == "join_lobby":
                 await handle_join_lobby(ws, msg)
+            elif msg_type == "join_room":
+                await handle_join_room(ws, msg)
             elif conn_info is None:
                 await send_error(ws, "Önce bir lobiye katılmanız gerekiyor")
             else:

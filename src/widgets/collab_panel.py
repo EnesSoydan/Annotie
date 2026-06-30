@@ -16,11 +16,31 @@ class CollabPanel(QDockWidget):
     join_lobby_requested = Signal(str, str, str)  # server_url, lobby_id, display_name
     leave_lobby_requested = Signal()
 
-    DEFAULT_SERVER = "wss://annotie.onrender.com"
+    @staticmethod
+    def _resolve_default_server() -> str:
+        """Varsayılan relay adresi — ekip sistemiyle aynı collab_url'i kullanır
+        (cloud_config.json 'collab_url' veya COLLAB_URL env; yoksa yerel)."""
+        import os
+        import json
+        from pathlib import Path
+        url = os.environ.get("COLLAB_URL")
+        if url:
+            return url
+        for p in [Path.cwd() / "cloud_config.json",
+                  Path.home() / ".annotie" / "cloud_config.json"]:
+            try:
+                if p.is_file():
+                    data = json.loads(p.read_text(encoding="utf-8"))
+                    if data.get("collab_url"):
+                        return data["collab_url"]
+            except Exception:
+                pass
+        return "ws://127.0.0.1:8765/ws"
 
     def __init__(self, parent=None):
         super().__init__("İşbirliği", parent)
         self._collab_ctrl = None
+        self._default_server = self._resolve_default_server()
         self._setup_ui()
 
     def set_collab_controller(self, ctrl):
@@ -61,8 +81,8 @@ class CollabPanel(QDockWidget):
         # Sunucu URL
         layout.addWidget(QLabel("Sunucu:"))
         self._server_input = QLineEdit()
-        self._server_input.setPlaceholderText(self.DEFAULT_SERVER)
-        self._server_input.setText(self.DEFAULT_SERVER)
+        self._server_input.setPlaceholderText(self._default_server)
+        self._server_input.setText(self._default_server)
         layout.addWidget(self._server_input)
 
         # Takma ad
@@ -159,7 +179,7 @@ class CollabPanel(QDockWidget):
     # ── Event handler'lar ───────────────────────────────────────────────
 
     def _on_create_clicked(self):
-        server = self._server_input.text().strip() or self.DEFAULT_SERVER
+        server = self._server_input.text().strip() or self._default_server
         name = self._name_input.text().strip()
         if not name:
             self._show_error("Lütfen bir takma ad girin")
@@ -170,7 +190,7 @@ class CollabPanel(QDockWidget):
         self.create_lobby_requested.emit(server, name)
 
     def _on_join_clicked(self):
-        server = self._server_input.text().strip() or self.DEFAULT_SERVER
+        server = self._server_input.text().strip() or self._default_server
         name = self._name_input.text().strip()
         code = self._code_input.text().strip().upper()
         if not name:
