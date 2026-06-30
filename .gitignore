@@ -36,6 +36,10 @@ env/
 *.log
 *.bak
 
+# Bulut yapilandirmasi (proje-spesifik; ornek dosya commit edilir)
+cloud_config.json
+.env
+
 # Windows
 Thumbs.db
 Desktop.ini
