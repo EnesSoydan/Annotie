@@ -29,6 +29,15 @@ jobs:
           pip install pyinstaller
           pip install -r requirements.txt
 
+      - name: Bulut yapilandirmasini olustur
+        shell: pwsh
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          COLLAB_URL: ${{ secrets.COLLAB_URL }}
+        run: |
+          python -c "import json, os, sys; required=['SUPABASE_URL','SUPABASE_ANON_KEY','COLLAB_URL']; missing=[k for k in required if not os.environ.get(k)]; sys.exit('Eksik GitHub Secret: ' + ', '.join(missing)) if missing else None; open('cloud_config.json','w',encoding='utf-8').write(json.dumps({'url': os.environ['SUPABASE_URL'], 'anon_key': os.environ['SUPABASE_ANON_KEY'], 'collab_url': os.environ['COLLAB_URL']}, ensure_ascii=False, indent=2))"
+
       - name: PyInstaller ile derle
         run: python -m PyInstaller Annotie.spec --noconfirm
 
@@ -60,6 +69,14 @@ jobs:
           python -m pip install --upgrade pip
           pip install pyinstaller
           pip install -r requirements.txt
+
+      - name: Bulut yapilandirmasini olustur
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          COLLAB_URL: ${{ secrets.COLLAB_URL }}
+        run: |
+          python -c "import json, os, sys; required=['SUPABASE_URL','SUPABASE_ANON_KEY','COLLAB_URL']; missing=[k for k in required if not os.environ.get(k)]; sys.exit('Eksik GitHub Secret: ' + ', '.join(missing)) if missing else None; open('cloud_config.json','w',encoding='utf-8').write(json.dumps({'url': os.environ['SUPABASE_URL'], 'anon_key': os.environ['SUPABASE_ANON_KEY'], 'collab_url': os.environ['COLLAB_URL']}, ensure_ascii=False, indent=2))"
 
       - name: icon.png'den icon.icns olustur
         run: |

@@ -6,14 +6,20 @@ from pathlib import Path
 
 block_cipher = None
 
+datas = [
+    ('src', 'src'),
+    ('icon.ico', '.'),   # Gorev cubugu ikonu icin runtime'da gerekli
+]
+
+cloud_config = Path('cloud_config.json')
+if cloud_config.exists():
+    datas.append((str(cloud_config), '.'))
+
 a = Analysis(
     ['main.py'],
     pathex=['.'],
     binaries=[],
-    datas=[
-        ('src', 'src'),
-        ('icon.ico', '.'),   # Gorev cubugu ikonu icin runtime'da gerekli
-    ],
+    datas=datas,
     hiddenimports=[
         'PySide6.QtCore',
         'PySide6.QtGui',
@@ -58,10 +64,19 @@ a = Analysis(
         'src.io.folder_importer',
         'src.io.dataset_exporter',
         'src.io.image_loader',
+        'src.cloud.auth',
+        'src.cloud.cloud_config',
+        'src.cloud.datasets',
+        'src.cloud.images',
+        'src.cloud.storage',
+        'src.cloud.supabase_client',
+        'src.cloud.teams',
+        'src.cloud.token_store',
         'src.commands.add_annotation_cmd',
         'src.commands.delete_annotation_cmd',
         'src.commands.change_class_cmd',
         'src.commands.move_annotation_cmd',
+        'src.controllers.account_controller',
         'src.controllers.annotation_controller',
         'src.controllers.dataset_controller',
         'src.controllers.autosave_controller',
@@ -75,6 +90,11 @@ a = Analysis(
         'src.widgets.new_dataset_dialog',
         'src.widgets.export_dialog',
         'src.widgets.import_dialog',
+        'src.widgets.auth_dialog',
+        'src.widgets.cloud_open_worker',
+        'src.widgets.team_workspace_dialog',
+        'src.widgets.teams_dialog',
+        'src.widgets.upload_worker',
         'src.widgets.main_window',
     ],
     hookspath=[],

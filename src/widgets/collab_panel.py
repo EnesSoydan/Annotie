@@ -20,22 +20,8 @@ class CollabPanel(QDockWidget):
     def _resolve_default_server() -> str:
         """Varsayılan relay adresi — ekip sistemiyle aynı collab_url'i kullanır
         (cloud_config.json 'collab_url' veya COLLAB_URL env; yoksa yerel)."""
-        import os
-        import json
-        from pathlib import Path
-        url = os.environ.get("COLLAB_URL")
-        if url:
-            return url
-        for p in [Path.cwd() / "cloud_config.json",
-                  Path.home() / ".annotie" / "cloud_config.json"]:
-            try:
-                if p.is_file():
-                    data = json.loads(p.read_text(encoding="utf-8"))
-                    if data.get("collab_url"):
-                        return data["collab_url"]
-            except Exception:
-                pass
-        return "ws://127.0.0.1:8765/ws"
+        from src.cloud.cloud_config import CloudConfig
+        return CloudConfig.load().get_collab_url()
 
     def __init__(self, parent=None):
         super().__init__("İşbirliği", parent)

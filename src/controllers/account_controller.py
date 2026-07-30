@@ -408,23 +408,8 @@ class AccountController(QObject):
     def _collab_url() -> str:
         """Relay sunucu adresi. Yerel test: ws://127.0.0.1:8765/ws.
         COLLAB_URL ortam değişkeni veya cloud_config.json 'collab_url' ile değişir."""
-        import os
-        url = os.environ.get("COLLAB_URL")
-        if url:
-            return url
-        try:
-            from src.cloud.cloud_config import CloudConfig
-            import json
-            from pathlib import Path
-            for p in [Path.cwd() / "cloud_config.json",
-                      Path.home() / ".annotie" / "cloud_config.json"]:
-                if p.is_file():
-                    data = json.loads(p.read_text(encoding="utf-8"))
-                    if data.get("collab_url"):
-                        return data["collab_url"]
-        except Exception:
-            pass
-        return "ws://127.0.0.1:8765/ws"
+        from src.cloud.cloud_config import CloudConfig
+        return CloudConfig.load().get_collab_url()
 
     def _on_logout(self):
         if not self._auth:
