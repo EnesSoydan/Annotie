@@ -72,6 +72,7 @@ a = Analysis(
         'src.cloud.supabase_client',
         'src.cloud.teams',
         'src.cloud.token_store',
+        'src.update_service',
         'src.commands.add_annotation_cmd',
         'src.commands.delete_annotation_cmd',
         'src.commands.change_class_cmd',

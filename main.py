@@ -112,6 +112,7 @@ def main():
 
         # Pencere tamamen gozuktukten sonra hata gostermeye izin ver
         from PySide6.QtCore import QTimer
+        QTimer.singleShot(1500, window.update_manager.check_silently)
         def _mark_ready():
             global _window_ready
             _window_ready = True

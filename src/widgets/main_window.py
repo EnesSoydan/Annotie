@@ -59,6 +59,7 @@ from src.collab.collab_controller import CollabController
 from src.io.dataset_exporter import create_dataset_structure
 from src.utils.config import AppConfig
 from src.utils.constants import APP_NAME, APP_VERSION
+from src.update_service import UpdateManager
 
 
 class MainWindow(QMainWindow):
@@ -67,6 +68,7 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.config = AppConfig()
+        self.update_manager = UpdateManager(self)
         self._dataset = None
         self._canvas_focus = False   # Gorsel odak modu aktif mi
         self._active_toasts = []     # Aktif toast bildirimleri
@@ -246,6 +248,10 @@ class MainWindow(QMainWindow):
 
         help_menu = mb.addMenu("&Yardım")
         self._add_action(help_menu, "Kısayollar", "F1", self._on_shortcuts)
+        self._add_action(
+            help_menu, "Güncellemeleri Denetle...", None,
+            self.update_manager.check_interactive
+        )
         self._add_action(help_menu, "Hakkında", None, self._on_about)
 
     def _add_action(self, menu, text, shortcut=None, slot=None) -> QAction:
