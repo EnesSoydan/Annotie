@@ -30,6 +30,7 @@ class CollabController(QObject):
 
     lobby_created = Signal(str)
     lobby_joined = Signal(str, object)  # (lobby_id, manifest_dict)
+    room_joined = Signal(str)            # ekip dataset odası (dataset_id)
     lobby_left = Signal()
     connection_status_changed = Signal(bool)
     error_occurred = Signal(str)
@@ -50,6 +51,11 @@ class CollabController(QObject):
         self._display_name: Optional[str] = None
 
         self._applying_remote = False
+        # Aktif oturum bilgisi; yeniden bağlantıda odaya tekrar katılmak için.
+        self._session_kind: Optional[str] = None  # create | lobby | room
+        self._session_server_url = ""
+        self._session_lobby_id = ""
+        self._session_token: Optional[str] = None
         self._team_mode = False   # ekip dataseti odası (manifest'ten dataset kurma yok)
 
         # Modify throttle
@@ -67,6 +73,7 @@ class CollabController(QObject):
 
         # Client sinyalleri
         self._client.message_received.connect(self._on_message)
+        self._client.connected.connect(self._on_client_connected)
         self._client.connected.connect(lambda: self.connection_status_changed.emit(True))
         self._client.disconnected.connect(lambda: self.connection_status_changed.emit(False))
         self._client.connection_error.connect(self.error_occurred.emit)
@@ -107,38 +114,21 @@ class CollabController(QObject):
 
     def create_lobby(self, server_url: str, display_name: str):
         self._display_name = display_name
+        self._team_mode = False
+        self._session_kind = "create"
+        self._session_server_url = server_url
+        self._session_lobby_id = ""
+        self._session_token = None
         self._client.connect_to_server(server_url)
-
-        def _on_connected():
-            manifest = self._build_manifest()
-            self._client.send({
-                "type": MsgType.CREATE_LOBBY,
-                "display_name": display_name,
-                "manifest": manifest,
-            })
-            try:
-                self._client.connected.disconnect(_on_connected)
-            except RuntimeError:
-                pass
-
-        self._client.connected.connect(_on_connected)
 
     def join_lobby(self, server_url: str, lobby_id: str, display_name: str):
         self._display_name = display_name
+        self._team_mode = False
+        self._session_kind = "lobby"
+        self._session_server_url = server_url
+        self._session_lobby_id = lobby_id
+        self._session_token = None
         self._client.connect_to_server(server_url)
-
-        def _on_connected():
-            self._client.send({
-                "type": MsgType.JOIN_LOBBY,
-                "lobby_id": lobby_id,
-                "display_name": display_name,
-            })
-            try:
-                self._client.connected.disconnect(_on_connected)
-            except RuntimeError:
-                pass
-
-        self._client.connected.connect(_on_connected)
 
     def join_dataset_room(self, server_url: str, room_id: str, display_name: str,
                           token: str = None):
@@ -147,26 +137,46 @@ class CollabController(QObject):
         token: relay auth etkinse Supabase access token (üyelik doğrulaması)."""
         self._display_name = display_name
         self._team_mode = True
+        self._session_kind = "room"
+        self._session_server_url = server_url
+        self._session_lobby_id = str(room_id).strip()
+        self._session_token = token
         self._client.connect_to_server(server_url)
 
-        def _on_connected():
+    def _on_client_connected(self):
+        """Her bağlantıda aktif oturuma yeniden katılır.
+
+        WebSocket kopma sonrası yeniden bağlandığında relay tarafında yeni
+        bir bağlantı oluşur; önceki oda üyeliği otomatik taşınmaz.
+        """
+        if self._session_kind == "create":
+            self._client.send({
+                "type": MsgType.CREATE_LOBBY,
+                "display_name": self._display_name,
+                "manifest": self._build_manifest(),
+            })
+        elif self._session_kind == "lobby":
+            self._client.send({
+                "type": MsgType.JOIN_LOBBY,
+                "lobby_id": self._session_lobby_id,
+                "display_name": self._display_name,
+            })
+        elif self._session_kind == "room":
             msg = {
                 "type": MsgType.JOIN_ROOM,
-                "room_id": room_id,
-                "display_name": display_name,
+                "room_id": self._session_lobby_id,
+                "display_name": self._display_name,
             }
-            if token:
-                msg["token"] = token
+            if self._session_token:
+                msg["token"] = self._session_token
             self._client.send(msg)
-            try:
-                self._client.connected.disconnect(_on_connected)
-            except RuntimeError:
-                pass
-
-        self._client.connected.connect(_on_connected)
 
     def leave_lobby(self):
         self._team_mode = False
+        self._session_kind = None
+        self._session_server_url = ""
+        self._session_lobby_id = ""
+        self._session_token = None
         if self._lobby_id:
             self._client.send({"type": MsgType.LEAVE_LOBBY})
         self._client.disconnect_from_server()
@@ -339,6 +349,7 @@ class CollabController(QObject):
         self._presence.set_my_user_id(self._user_id)
         _dbg(f"Lobi oluşturuldu: {self._lobby_id}")
         self.lobby_created.emit(self._lobby_id)
+        self._send_current_image_focus()
 
     def _handle_lobby_joined(self, msg: dict):
         self._lobby_id = msg["lobby_id"]
@@ -348,9 +359,18 @@ class CollabController(QObject):
         _dbg(f"Lobiye katılındı: {self._lobby_id} (team={self._team_mode})")
         if self._team_mode:
             # Ekip modu: dataset zaten açık; manifest'ten yeniden kurma.
+            self.room_joined.emit(self._lobby_id)
+            self._send_current_image_focus()
             return
         manifest = msg.get("manifest")
         self.lobby_joined.emit(self._lobby_id, manifest or {})
+        self._send_current_image_focus()
+
+    def _send_current_image_focus(self):
+        """Odaya ilk/reconnect katılımında mevcut görseli bildirir."""
+        if not self._ann_ctrl or not self._ann_ctrl._current_image:
+            return
+        self.send_image_focus(self._ann_ctrl._current_image.stem)
 
     def _handle_user_joined(self, msg: dict):
         _dbg(f"Kullanıcı katıldı: {msg.get('display_name')}")

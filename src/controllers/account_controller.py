@@ -248,8 +248,16 @@ class AccountController(QObject):
                 self.mw.collab_ctrl.set_dataset(dset)
                 self.mw.collab_ctrl.join_dataset_room(
                     self._collab_url(), ds["id"], dn, token=token)
-            except Exception:
-                pass
+            except Exception as exc:
+                # Canlı ekip bağlantısı başarısız olursa sessizce yutma;
+                # kullanıcı ekip datasetinin neden yalnız çalıştığını görsün.
+                self.mw.status_bar.showMessage(
+                    f"Canlı ekip bağlantısı başlatılamadı: {exc}", 6000
+                )
+                try:
+                    self.mw.collab_ctrl.error_occurred.emit(str(exc))
+                except Exception:
+                    pass
 
         def on_failed(msg):
             progress.close()

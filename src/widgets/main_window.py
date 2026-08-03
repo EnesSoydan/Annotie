@@ -350,6 +350,17 @@ class MainWindow(QMainWindow):
         sc_esc.setContext(Qt.ShortcutContext.WindowShortcut)
         sc_esc.activated.connect(self._on_escape_press)
 
+        # 1-9: listedeki sinif sirasini sec (1 -> 0. class).
+        self._class_shortcuts = []
+        for key_number in range(1, 10):
+            class_index = key_number - 1
+            shortcut = QShortcut(QKeySequence(str(key_number)), self)
+            shortcut.setContext(Qt.ShortcutContext.WindowShortcut)
+            shortcut.activated.connect(
+                lambda index=class_index: self._select_class_by_number(index)
+            )
+            self._class_shortcuts.append(shortcut)
+
     # ─── Event Handler'lar ────────────────────────────────────────────────────
 
     def _on_dataset_loaded(self, dataset):
@@ -396,6 +407,18 @@ class MainWindow(QMainWindow):
                     f"Tümü kategorisinde {all_pos + 1}. frame'de kaldınız",
                     is_error=False, duration=4000
                 )
+
+    def _select_class_by_number(self, class_index: int):
+        """0-9 kisayoluyla listedeki sinifi aktif hale getirir."""
+        if not self._dataset or class_index >= len(self._dataset.classes):
+            return
+        if self.class_panel.select_class_by_index(class_index):
+            class_id = self.class_panel.get_selected_class_id()
+            cls = self._dataset.get_class_by_id(class_id)
+            class_name = cls.name if cls else str(class_id)
+            self.status_bar.showMessage(
+                f"Aktif sinif: {class_id}. {class_name}", 1500
+            )
 
     def _on_annotations_loaded(self, image):
         """Gorsel degistiginde onceden yuklu annotationlari gunceller."""

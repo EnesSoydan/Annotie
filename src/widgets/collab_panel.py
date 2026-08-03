@@ -33,6 +33,7 @@ class CollabPanel(QDockWidget):
         self._collab_ctrl = ctrl
         ctrl.lobby_created.connect(self._on_lobby_created)
         ctrl.lobby_joined.connect(self._on_lobby_joined)
+        ctrl.room_joined.connect(self._on_room_joined)
         ctrl.lobby_left.connect(self._on_lobby_left)
         ctrl.connection_status_changed.connect(self._on_connection_changed)
         ctrl.error_occurred.connect(self._on_error)
@@ -218,6 +219,18 @@ class CollabPanel(QDockWidget):
         self._status_label.setText("Bağlı - Peer")
         self._status_label.setStyleSheet(
             "font-size: 11px; padding: 3px; color: #2196f3; background: #1a2030; border-radius: 3px;"
+        )
+        self._stack.setCurrentIndex(1)
+        self._reset_join_buttons()
+        self._refresh_user_list()
+
+    def _on_room_joined(self, room_id: str):
+        """Ekip dataset odasını normal lobi gibi görünür hale getirir."""
+        self._lobby_code_label.setText(f"Dataset: {room_id}")
+        self._status_label.setText("Bağlı - Ekip Dataseti")
+        self._status_label.setStyleSheet(
+            "font-size: 11px; padding: 3px; color: #4caf50; "
+            "background: #1a2e1a; border-radius: 3px;"
         )
         self._stack.setCurrentIndex(1)
         self._reset_join_buttons()

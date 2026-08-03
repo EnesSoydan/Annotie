@@ -126,3 +126,10 @@ class ClassListPanel(QDockWidget):
             if cls:
                 return cls.id
         return 0
+
+    def select_class_by_index(self, index: int) -> bool:
+        """Listedeki sirasina gore bir sinifi secer."""
+        if index < 0 or index >= self._list.count():
+            return False
+        self._list.setCurrentRow(index)
+        return True

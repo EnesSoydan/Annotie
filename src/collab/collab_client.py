@@ -94,8 +94,11 @@ class CollabClient(QObject):
         self._is_connected = True
         self._retry_count = 0
         self._heartbeat_timer.start(self.HEARTBEAT_INTERVAL_MS)
-        self._flush_queue()
+        # Önce controller'ın connected handler'ı odaya yeniden katılsın.
+        # Bekleyen operasyonlar ancak bundan sonra relay'e gönderilmelidir;
+        # aksi halde relay bunları oda üyeliği kurulmadan reddeder.
         self.connected.emit()
+        self._flush_queue()
 
     def _on_disconnected(self):
         was_connected = self._is_connected
