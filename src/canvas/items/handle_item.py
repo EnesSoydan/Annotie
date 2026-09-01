@@ -1,5 +1,7 @@
 """Yeniden boyutlandirma / tasima tutamaci."""
 
+import math
+
 from PySide6.QtWidgets import QGraphicsRectItem, QGraphicsItem
 from PySide6.QtGui import QBrush, QPen, QColor
 from PySide6.QtCore import Qt, QRectF
@@ -8,7 +10,8 @@ from PySide6.QtCore import Qt, QRectF
 class HandleItem(QGraphicsRectItem):
     """Annotation ogelerinin koselerinde kullanilan suruklenebilir tutamac."""
 
-    HANDLE_SIZE = 7   # Sabit ekran pikseli (zoom'dan bagimsiz)
+    HANDLE_SIZE = 7.0      # Normal zoom ekran pikseli
+    MIN_HANDLE_SIZE = 4.0  # Yüksek zoom alt sınırı
 
     def __init__(self, parent_item, handle_index: int, x: float = 0, y: float = 0):
         s = self.HANDLE_SIZE
@@ -17,6 +20,7 @@ class HandleItem(QGraphicsRectItem):
         self._index = handle_index
         self._dragging = False
         self._drag_start = None
+        self._display_size = float(s)
 
         self.setPos(x, y)
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsMovable, False)
@@ -33,6 +37,22 @@ class HandleItem(QGraphicsRectItem):
     @property
     def index(self) -> int:
         return self._index
+
+    @property
+    def display_size(self) -> float:
+        return self._display_size
+
+    def set_view_zoom(self, zoom: float):
+        """Yüksek zoomda görsel ve tıklanabilir tutamaç alanını küçültür."""
+        zoom = max(0.01, float(zoom))
+        size = self.HANDLE_SIZE
+        if zoom > 1.0:
+            size = max(self.MIN_HANDLE_SIZE, self.HANDLE_SIZE / math.sqrt(zoom))
+        if abs(size - self._display_size) < 0.01:
+            return
+
+        self._display_size = size
+        self.setRect(-size / 2, -size / 2, size, size)
 
     def set_hover_style(self):
         self.setBrush(QBrush(QColor(0, 160, 255)))

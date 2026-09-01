@@ -380,6 +380,10 @@ class AnnotationController(QObject):
     def set_active_class(self, class_id: int):
         self._active_class_id = class_id
 
+    def get_active_class_color(self):
+        """Çizim önizlemeleri için etkin sınıf rengini döndürür."""
+        return self._get_class_color(self._active_class_id)
+
     def set_annotation_list_panel(self, panel):
         self._annotation_list_panel = panel
 

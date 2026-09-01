@@ -5,6 +5,7 @@ from PySide6.QtGui import QPen, QBrush, QColor, QFont
 from PySide6.QtCore import Qt, QRectF, QPointF
 
 from src.canvas.items.base_item import BaseAnnotationItem
+from src.canvas.items.bbox_style import PixelSizeBadge, bbox_fill_color
 from src.canvas.items.handle_item import HandleItem
 from src.models.annotation import BBoxAnnotation
 from src.utils.geometry import center_wh_to_rect, rect_to_center_wh, normalize_bbox
@@ -45,6 +46,7 @@ class BBoxItem(QGraphicsRectItem, BaseAnnotationItem):
         self._apply_style()
         self._create_handles()
         self._create_label()
+        self._create_size_badge()
 
     def _ann_to_pixel(self, ann: BBoxAnnotation):
         cx = ann.x_center * self._img_w
@@ -63,7 +65,7 @@ class BBoxItem(QGraphicsRectItem, BaseAnnotationItem):
         }
 
     def _apply_style(self, selected=False):
-        fill = self._get_fill_color()
+        fill = bbox_fill_color(self._class_color)
         border = self._get_selected_color() if selected else self._get_border_color()
         self.setBrush(QBrush(fill))
         pen = QPen(border, 2)
@@ -103,6 +105,19 @@ class BBoxItem(QGraphicsRectItem, BaseAnnotationItem):
     def _update_label_pos(self):
         r = self.rect()
         self._label.setPos(r.x() + 2, r.y() - 18)
+
+    def _create_size_badge(self):
+        self._size_badge = PixelSizeBadge(self._class_color, self)
+        self._update_size_badge()
+
+    def _update_size_badge(self):
+        r = self.rect().normalized()
+        self._size_badge.set_dimensions(r.width(), r.height())
+        self._size_badge.set_box_rect(r)
+
+    def set_view_zoom(self, zoom: float):
+        BaseAnnotationItem.set_view_zoom(self, zoom)
+        self._size_badge.set_view_zoom(zoom)
 
     # --- Taşıma undo ---
 
@@ -147,6 +162,7 @@ class BBoxItem(QGraphicsRectItem, BaseAnnotationItem):
 
         self.setRect(QRectF(QPointF(x1, y1), QPointF(x2, y2)))
         self._update_label_pos()
+        self._update_size_badge()
         self._updating_handles = False
         self._update_handle_positions()
         self._sync_annotation()
@@ -184,6 +200,8 @@ class BBoxItem(QGraphicsRectItem, BaseAnnotationItem):
         self._updating_from_annotation = False
         self._update_handle_positions()
         self._update_label_pos()
+        self._size_badge.set_color(self._class_color)
+        self._update_size_badge()
         self._label.setPlainText(self._class_name)
         self._apply_style(self.isSelected())
 
@@ -225,6 +243,7 @@ class BBoxItem(QGraphicsRectItem, BaseAnnotationItem):
                 self._clamp_and_crush()
                 self._update_handle_positions()
                 self._update_label_pos()
+                self._update_size_badge()
                 self._sync_annotation()
                 self.signals.geometry_changed.emit(self)
         if change == QGraphicsItem.GraphicsItemChange.ItemSelectedHasChanged:

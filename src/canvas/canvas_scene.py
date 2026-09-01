@@ -44,6 +44,9 @@ class CanvasScene(QGraphicsScene):
         """Sahneye bir annotation ogesi ekler."""
         self.addItem(item)
         self._annotation_items.append(item)
+        views = self.views()
+        if views and hasattr(item, "set_view_zoom"):
+            item.set_view_zoom(abs(views[0].transform().m11()) or 1.0)
         self.annotation_added.emit(item)
 
     def remove_annotation_item(self, item):

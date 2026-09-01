@@ -72,3 +72,9 @@ class BaseAnnotationItem:
     def _get_selected_color(self) -> QColor:
         c = QColor(255, 255, 0)
         return c
+
+    def set_view_zoom(self, zoom: float):
+        """Sabit ekran boyutlu alt öğeleri mevcut zoom'a uyarlar."""
+        for handle in getattr(self, "_handles", []):
+            if hasattr(handle, "set_view_zoom"):
+                handle.set_view_zoom(zoom)

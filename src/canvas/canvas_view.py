@@ -62,6 +62,8 @@ class CanvasView(QGraphicsView):
         self._active_tool = tool
         if tool:
             tool.activate()
+            if hasattr(tool, "set_view_zoom"):
+                tool.set_view_zoom(self._zoom_level)
             cursor = tool.get_cursor()
             if cursor:
                 self.setCursor(cursor)
@@ -83,12 +85,14 @@ class CanvasView(QGraphicsView):
         if self._scene.has_image:
             self.fitInView(self._scene.sceneRect(), Qt.AspectRatioMode.KeepAspectRatio)
             self._zoom_level = self.transform().m11()
+            self._sync_overlay_zoom()
             self.zoom_changed.emit(self._zoom_level)
 
     def zoom_100(self):
         """%100 zoom."""
         self.resetTransform()
         self._zoom_level = 1.0
+        self._sync_overlay_zoom()
         self.zoom_changed.emit(self._zoom_level)
 
     def _apply_zoom(self, factor: float):
@@ -96,7 +100,16 @@ class CanvasView(QGraphicsView):
         if MIN_ZOOM <= new_zoom <= MAX_ZOOM:
             self.scale(factor, factor)
             self._zoom_level = new_zoom
+            self._sync_overlay_zoom()
             self.zoom_changed.emit(self._zoom_level)
+
+    def _sync_overlay_zoom(self):
+        """Annotation rozetlerini ve tutamaçlarını görünüm zoom'una uyarlar."""
+        for item in self._scene.get_annotation_items():
+            if hasattr(item, "set_view_zoom"):
+                item.set_view_zoom(self._zoom_level)
+        if self._active_tool and hasattr(self._active_tool, "set_view_zoom"):
+            self._active_tool.set_view_zoom(self._zoom_level)
 
     # --- Yardimci ---
     def _has_interactive_item_at(self, scene_pos) -> bool:
