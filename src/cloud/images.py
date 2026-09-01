@@ -23,7 +23,8 @@ class ImageService:
     def add_image(self, dataset_id: str, filename: str, content_hash: str,
                   storage_key: str, width: Optional[int] = None,
                   height: Optional[int] = None, split: Optional[str] = None,
-                  size_bytes: Optional[int] = None) -> Optional[dict]:
+                  size_bytes: Optional[int] = None,
+                  label_content: Optional[str] = None) -> Optional[dict]:
         """Görsel kaydı ekler/günceller (dataset_id+filename benzersiz → upsert)."""
         payload = {
             "dataset_id": dataset_id,
@@ -40,6 +41,8 @@ class ImageService:
             payload["split"] = split
         if size_bytes is not None:
             payload["size_bytes"] = size_bytes
+        if label_content is not None:
+            payload["label_content"] = label_content
         try:
             res = (self._client.table("images")
                    .upsert(payload, on_conflict="dataset_id,filename")

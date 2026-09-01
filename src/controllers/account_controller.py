@@ -57,6 +57,7 @@ class AccountController(QObject):
         self._cloud_dir = None
         self._cloud_dataset_id = None
         self._cloud_map = {}
+        self._cloud_meta = {}
         self._cloud_hash = {}        # filename → content_hash (lazy indirme)
         self._storage_client = None  # StorageClient (keep-alive havuzu)
         # Sınıf değişikliklerini DB'ye yazma (debounce)
@@ -68,6 +69,8 @@ class AccountController(QObject):
         # Editör kaydetme → DB write-through köprüsü
         try:
             self.mw.ds_ctrl.image_saved.connect(self._on_cloud_image_saved)
+            self.mw.ds_ctrl.image_deleted.connect(self._on_cloud_image_deleted)
+            self.mw.ds_ctrl.image_restored.connect(self._on_cloud_image_restored)
             self.mw.ds_ctrl.dataset_loaded.connect(self._on_any_dataset_loaded)
         except Exception:
             pass
@@ -207,6 +210,7 @@ class AccountController(QObject):
 
         self._storage_client = StorageClient()
         self._cloud_hash = {im["filename"]: im["content_hash"] for im in images}
+        self._cloud_meta = {im["filename"]: dict(im) for im in images}
         dest = Path.home() / ".annotie" / "cache" / "datasets" / ds["id"]
 
         # Lazy: yalnızca yapı + etiketler hazırlanır; görseller görüntülendikçe iner
@@ -392,6 +396,84 @@ class AccountController(QObject):
         self._track(worker)
         worker.start()
 
+    def _on_cloud_image_deleted(self, image, delete_record=None):
+        """Ekip datasetindeki yerel silmeyi Supabase images kaydına uygular."""
+        if not self._cloud_active or not self.is_authenticated() or self._img_svc is None:
+            return
+        filename = image.filename
+        image_id = self._cloud_map.get(filename)
+        if not image_id:
+            return
+
+        worker = _AuthWorker(
+            lambda iid=image_id: self._img_svc.delete_image(iid), self
+        )
+
+        def on_done(_result, fn=filename, iid=image_id):
+            if self._cloud_map.get(fn) == iid:
+                self._cloud_map.pop(fn, None)
+            self.mw.status_bar.showMessage(
+                f"Ekip datasetinden silindi: {fn}", 3500
+            )
+
+        def on_failed(message):
+            self.mw.status_bar.showMessage(
+                f"Ekip kaydı silinemedi: {message}", 6000
+            )
+
+        worker.done.connect(on_done)
+        worker.failed.connect(on_failed)
+        self._track(worker)
+        worker.start()
+
+    def _on_cloud_image_restored(self, image):
+        """Geri alınan görselin Supabase images satırını yeniden kurar."""
+        if not self._cloud_active or not self.is_authenticated() or self._img_svc is None:
+            return
+        meta = self._cloud_meta.get(image.filename)
+        if not meta:
+            return
+
+        label_content = ""
+        try:
+            ds = self.mw.ds_ctrl.dataset
+            label_path = ds.get_label_path_for_image(image) if ds else None
+            if label_path and label_path.exists():
+                label_content = label_path.read_text(encoding="utf-8")
+        except Exception:
+            pass
+
+        worker = _AuthWorker(
+            lambda m=dict(meta), c=label_content: self._img_svc.add_image(
+                self._cloud_dataset_id,
+                m["filename"],
+                m["content_hash"],
+                m.get("storage_key") or f"blobs/{m['content_hash']}",
+                width=m.get("width"),
+                height=m.get("height"),
+                split=m.get("split"),
+                size_bytes=m.get("size_bytes"),
+                label_content=c,
+            ), self
+        )
+
+        def on_done(row, fn=image.filename):
+            if row and row.get("id"):
+                self._cloud_map[fn] = row["id"]
+            self.mw.status_bar.showMessage(
+                f"Ekip datasetine geri eklendi: {fn}", 3500
+            )
+
+        def on_failed(message):
+            self.mw.status_bar.showMessage(
+                f"Ekip kaydı geri yüklenemedi: {message}", 6000
+            )
+
+        worker.done.connect(on_done)
+        worker.failed.connect(on_failed)
+        self._track(worker)
+        worker.start()
+
     def _on_any_dataset_loaded(self, dataset):
         """Farklı (yerel) bir dataset açılırsa ekip write-through'u devre dışı bırak."""
         from pathlib import Path
@@ -405,6 +487,10 @@ class AccountController(QObject):
             same = str(root) == str(self._cloud_dir)
         if not same:
             self._cloud_active = False
+            self._cloud_dataset_id = None
+            self._cloud_map.clear()
+            self._cloud_meta.clear()
+            self._cloud_hash.clear()
             # Yerel/başka datasete geçince ekip odasından çık
             try:
                 if self.mw.collab_ctrl.is_in_lobby:

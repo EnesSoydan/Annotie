@@ -14,6 +14,8 @@ class DatasetController(QObject):
     dataset_loaded = Signal(object)       # Dataset
     dataset_cleared = Signal()
     image_saved = Signal(object)          # ImageItem
+    image_deleted = Signal(object, object)  # (ImageItem, delete_record)
+    image_restored = Signal(object)       # ImageItem
     error_occurred = Signal(str)
 
     def __init__(self, annotation_controller, main_window, parent=None):
@@ -295,6 +297,7 @@ class DatasetController(QObject):
             "index": old_index,
             "files": backups,
         }
+        self.image_deleted.emit(image, delete_record)
         if deleted_files == 0:
             return True, "Görsel listeden kaldırıldı; diskte dosya bulunamadı.", delete_record
         if deleted_files == 1:
@@ -330,6 +333,7 @@ class DatasetController(QObject):
             self._dataset.images = {str(img.path): img for img in images}
         self._image_list = self._dataset.get_all_images()
         self.load_image(image)
+        self.image_restored.emit(image)
         return True, "Görsel geri alındı."
 
     def import_images_from_folder(self, folder_path: str, split: str, mode: str) -> int:
