@@ -63,13 +63,23 @@ def _find_package_root(extracted: Path) -> Path:
     raise RuntimeError("Pakette Annotie.exe bulunamadı.")
 
 
-def _copy_update(source: Path, install_dir: Path):
+def _copy_update(
+    source: Path,
+    install_dir: Path,
+    running_executable: Path | None = None,
+):
+    running_executable = (running_executable or Path(sys.executable)).resolve()
     for item in source.rglob("*"):
         relative = item.relative_to(source)
         destination = install_dir / relative
-        # Updater kendi EXE'si çalışırken Windows onun üzerine yazılmasına izin
-        # vermez. Mevcut updater yeni uygulama sürümüyle de çalışabilir.
-        if relative.name.lower() in {"annotieupdater.exe", "cloud_config.json"}:
+        if relative.name.lower() == "cloud_config.json":
+            continue
+        # Kurulu updater çalışıyorsa Windows onun üzerine yazılmasına izin
+        # vermez. Geçici klasörden çalışıyorsak yeni updater'ı kuruluma kopyala.
+        if (
+            relative.name.lower() == "annotieupdater.exe"
+            and destination.resolve() == running_executable
+        ):
             continue
         if item.is_dir():
             destination.mkdir(parents=True, exist_ok=True)

@@ -39,11 +39,29 @@ jobs:
           python -c "import json, os, sys; required=['SUPABASE_URL','SUPABASE_ANON_KEY','COLLAB_URL']; missing=[k for k in required if not os.environ.get(k)]; sys.exit('Eksik GitHub Secret: ' + ', '.join(missing)) if missing else None; open('cloud_config.json','w',encoding='utf-8').write(json.dumps({'url': os.environ['SUPABASE_URL'], 'anon_key': os.environ['SUPABASE_ANON_KEY'], 'collab_url': os.environ['COLLAB_URL']}, ensure_ascii=False, indent=2))"
 
       - name: PyInstaller ile derle
-        run: python -m PyInstaller Annotie.spec --noconfirm
+        shell: pwsh
+        run: |
+          python -m PyInstaller Annotie.spec --noconfirm
+          python -m PyInstaller AnnotieUpdater.spec --noconfirm
+          Copy-Item -LiteralPath dist\AnnotieUpdater.exe -Destination dist\Annotie\AnnotieUpdater.exe -Force
+          if (-not (Test-Path -LiteralPath dist\Annotie\AnnotieUpdater.exe)) {
+            throw "AnnotieUpdater.exe Windows paketine eklenemedi."
+          }
 
       - name: ZIP olustur
         shell: pwsh
-        run: Compress-Archive -Path dist\Annotie -DestinationPath Annotie-Windows.zip
+        run: |
+          Compress-Archive -Path dist\Annotie -DestinationPath Annotie-Windows.zip
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $archive = [System.IO.Compression.ZipFile]::OpenRead("Annotie-Windows.zip")
+          try {
+            $hasUpdater = $archive.Entries | Where-Object { $_.Name -eq "AnnotieUpdater.exe" }
+            if (-not $hasUpdater) {
+              throw "Olusturulan ZIP icinde AnnotieUpdater.exe bulunamadi."
+            }
+          } finally {
+            $archive.Dispose()
+          }
 
       - name: Artifact yukle
         uses: actions/upload-artifact@v4

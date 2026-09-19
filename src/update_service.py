@@ -6,12 +6,14 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
 import urllib.request
+import zipfile
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Optional
 
 from PySide6.QtCore import QObject, QThread, Signal, Qt
@@ -53,6 +55,42 @@ def _windows_asset(assets: list[dict]) -> Optional[dict]:
         if "windows" in str(asset.get("name", "")).lower()
     ]
     return (windows or zips or [None])[0]
+
+
+def _extract_packaged_updater(package_path: Path) -> tuple[Path, Path]:
+    """Paketlenmiş updater'ı güvenli bir geçici klasöre çıkarır.
+
+    Dönüş değeri ``(updater_yolu, geçici_klasör)`` biçimindedir. Çağıran,
+    yardımcı başlatılamazsa geçici klasörü temizlemelidir.
+    """
+    temp_dir = Path(tempfile.mkdtemp(prefix="annotie-updater-"))
+    try:
+        with zipfile.ZipFile(package_path, "r") as archive:
+            candidates = []
+            for member in archive.infolist():
+                name = member.filename.replace("\\", "/")
+                relative = PurePosixPath(name)
+                if (
+                    member.is_dir()
+                    or relative.is_absolute()
+                    or ".." in relative.parts
+                ):
+                    continue
+                if relative.name.lower() == "annotieupdater.exe":
+                    candidates.append(member)
+
+            if len(candidates) != 1:
+                raise RuntimeError(
+                    "Güncelleme paketinde AnnotieUpdater.exe bulunamadı."
+                )
+
+            updater = temp_dir / "AnnotieUpdater.exe"
+            with archive.open(candidates[0], "r") as source, updater.open("wb") as output:
+                shutil.copyfileobj(source, output)
+        return updater, temp_dir
+    except Exception:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+        raise
 
 
 def check_latest_release() -> Optional[UpdateInfo]:
@@ -268,12 +306,19 @@ class UpdateManager(QObject):
     def _launch_updater(self, package_path: Path) -> bool:
         install_dir = Path(sys.executable).resolve().parent
         updater = install_dir / "AnnotieUpdater.exe"
+        temporary_updater_dir: Optional[Path] = None
         if not updater.is_file():
-            QMessageBox.warning(
-                self.parent(), "Güncelleme Başarısız",
-                "Güncelleme yardımcısı bulunamadı. Yeni paketi elle kurmanız gerekiyor."
-            )
-            return False
+            try:
+                updater, temporary_updater_dir = _extract_packaged_updater(
+                    package_path
+                )
+            except Exception as exc:
+                QMessageBox.warning(
+                    self.parent(), "Güncelleme Başarısız",
+                    "Güncelleme yardımcısı bulunamadı. "
+                    f"Yeni paketi elle kurmanız gerekiyor.\n\n{exc}"
+                )
+                return False
 
         try:
             subprocess.Popen(
@@ -292,6 +337,8 @@ class UpdateManager(QObject):
                 close_fds=True,
             )
         except Exception as exc:
+            if temporary_updater_dir is not None:
+                shutil.rmtree(temporary_updater_dir, ignore_errors=True)
             try:
                 package_path.unlink(missing_ok=True)
             except OSError:

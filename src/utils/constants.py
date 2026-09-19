@@ -1,7 +1,7 @@
 """Uygulama genelinde kullanilan sabitler."""
 
 APP_NAME = "Annotie"
-APP_VERSION = "1.4.4"
+APP_VERSION = "1.4.5"
 ORG_NAME = "Annotie"
 
 SUPPORTED_IMAGE_FORMATS = ['.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.tif', '.webp']
