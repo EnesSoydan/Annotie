@@ -151,7 +151,9 @@ class MainWindow(QMainWindow):
             from src.io.label_writer import write_label_file
             label_path = self._dataset.get_label_path_for_image(image)
             if label_path:
-                write_label_file(label_path, image.annotations)
+                identity_path = self._dataset.get_annotation_identity_path(label_path)
+                if not write_label_file(label_path, image.annotations, identity_path):
+                    return
                 image.mark_clean()
                 # Tüm kayıt yolları (anlık/otomatik/menü) DB write-through tetiklesin
                 # (ekip dataseti aktifse account_ctrl bunu DB'ye gönderir)

@@ -305,6 +305,7 @@ class AccountController(QObject):
             lbl = labels_dir / (Path(fn).stem + ".txt")
             if lbl.exists():
                 item._pending_label_path = lbl
+                item._pending_identity_path = dset.get_annotation_identity_path(lbl)
                 item._pending_kpt_shape = dset.kpt_shape
             dset.add_image(item)
         return dset

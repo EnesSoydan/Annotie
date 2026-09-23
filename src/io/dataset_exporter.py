@@ -5,6 +5,7 @@ from typing import Optional
 import shutil
 from src.models.dataset import Dataset
 from src.io.label_writer import write_label_file
+from src.io.annotation_identity import identity_metadata_path
 from src.io.yaml_handler import write_data_yaml
 
 
@@ -47,7 +48,9 @@ def export_dataset(dataset: Dataset, export_path: str, copy_images: bool = True,
             if copy_images and img.path.exists():
                 shutil.copy2(img.path, img_dst)
 
-            write_label_file(lbl_dst, img.annotations)
+            metadata_path = identity_metadata_path(root, lbl_dst)
+            if not write_label_file(lbl_dst, img.annotations, metadata_path):
+                return False
 
             if progress_callback:
                 progress_callback(idx + 1, total)

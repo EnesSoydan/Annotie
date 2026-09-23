@@ -17,6 +17,7 @@ class ImageItem:
     dirty: bool = False
     _dimensions_loaded: bool = field(default=False, repr=False)
     _pending_label_path: Optional[Path] = field(default=None, repr=False)
+    _pending_identity_path: Optional[Path] = field(default=None, repr=False)
     _pending_kpt_shape: Optional[tuple] = field(default=None, repr=False)
 
     @property
@@ -74,9 +75,11 @@ class ImageItem:
             if self._pending_label_path.exists():
                 self.annotations = read_label_file(
                     self._pending_label_path,
-                    kpt_shape=self._pending_kpt_shape
+                    kpt_shape=self._pending_kpt_shape,
+                    identity_metadata_path=self._pending_identity_path,
                 )
             self._pending_label_path = None
+            self._pending_identity_path = None
             self._pending_kpt_shape = None
 
     def mark_dirty(self):

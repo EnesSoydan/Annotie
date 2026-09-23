@@ -61,6 +61,7 @@ def import_dataset(root_path: str) -> Optional[Dataset]:
                 lbl_path = lbl_dir / (img_path.stem + '.txt')
                 if lbl_path.exists():
                     item._pending_label_path = lbl_path
+                    item._pending_identity_path = dataset.get_annotation_identity_path(lbl_path)
                     item._pending_kpt_shape = kpt_shape
             dataset.add_image(item)
 
@@ -77,6 +78,7 @@ def import_dataset(root_path: str) -> Optional[Dataset]:
                     lbl_path = labels_dir / (img_path.stem + '.txt')
                     if lbl_path.exists():
                         item._pending_label_path = lbl_path
+                        item._pending_identity_path = dataset.get_annotation_identity_path(lbl_path)
                         item._pending_kpt_shape = kpt_shape
                 dataset.add_image(item)
         else:
@@ -86,6 +88,7 @@ def import_dataset(root_path: str) -> Optional[Dataset]:
                 lbl_same = img_path.with_suffix('.txt')
                 if lbl_same.exists():
                     item._pending_label_path = lbl_same
+                    item._pending_identity_path = dataset.get_annotation_identity_path(lbl_same)
                     item._pending_kpt_shape = kpt_shape
                 dataset.add_image(item)
 

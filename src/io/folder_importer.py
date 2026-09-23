@@ -45,7 +45,7 @@ def _import_yolo_structure(dataset: Dataset, images_dir: Path, labels_dir: Path)
         # images/ icinde dogrudan gorseller var (split yok)
         for img_path in direct_images:
             item = ImageItem(path=img_path, split="unassigned")
-            _try_load_label(item, img_path, labels_dir)
+            _try_load_label(item, img_path, labels_dir, dataset)
             dataset.add_image(item)
     else:
         # images/ altinda split klasorleri olabilir: train/, val/, test/
@@ -56,7 +56,7 @@ def _import_yolo_structure(dataset: Dataset, images_dir: Path, labels_dir: Path)
             split_labels = labels_dir / split_dir.name if labels_dir.exists() else None
             for img_path in _collect_images_in_dir(split_dir):
                 item = ImageItem(path=img_path, split=split)
-                _try_load_label(item, img_path, split_labels)
+                _try_load_label(item, img_path, split_labels, dataset)
                 dataset.add_image(item)
 
 
@@ -67,22 +67,25 @@ def _import_flat_folder(dataset: Dataset, folder: Path):
         lbl_path = img_path.with_suffix('.txt')
         if lbl_path.exists():
             item._pending_label_path = lbl_path
+            item._pending_identity_path = dataset.get_annotation_identity_path(lbl_path)
         dataset.add_image(item)
 
 
-def _try_load_label(item: ImageItem, img_path: Path, lbl_dir):
+def _try_load_label(item: ImageItem, img_path: Path, lbl_dir, dataset: Dataset):
     """Gorsel icin etiket yolunu lazy olarak kaydeder."""
     # 1) labels/ klasorundan ara
     if lbl_dir and Path(lbl_dir).exists():
         lbl_path = Path(lbl_dir) / (img_path.stem + '.txt')
         if lbl_path.exists():
             item._pending_label_path = lbl_path
+            item._pending_identity_path = dataset.get_annotation_identity_path(lbl_path)
             return
 
     # 2) Yedek: gorsel yaniında .txt
     lbl_same = img_path.with_suffix('.txt')
     if lbl_same.exists():
         item._pending_label_path = lbl_same
+        item._pending_identity_path = dataset.get_annotation_identity_path(lbl_same)
 
 
 def _detect_split_from_name(name: str) -> str:

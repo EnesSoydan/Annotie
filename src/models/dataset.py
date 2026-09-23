@@ -6,6 +6,7 @@ from typing import List, Dict, Optional, Tuple
 from src.models.label_class import LabelClass
 from src.models.image_item import ImageItem
 from src.models.annotation import AnnotationType
+from src.io.annotation_identity import identity_metadata_path
 
 
 @dataclass
@@ -109,6 +110,18 @@ class Dataset:
 
         # Fallback: split atanmamis veya path eksik → yola gore tahmin et
         return self._infer_label_path(image)
+
+    def get_annotation_identity_path(self, label_path: Path) -> Optional[Path]:
+        """Etiket dosyasinin dataset icindeki kalici kimlik yan dosyasi."""
+        if self.root_path is None:
+            return None
+        return identity_metadata_path(self.root_path, label_path)
+
+    def get_annotation_identity_path_for_image(self, image: ImageItem) -> Optional[Path]:
+        label_path = self.get_label_path_for_image(image)
+        if label_path is None:
+            return None
+        return self.get_annotation_identity_path(label_path)
 
     def _infer_label_path(self, image: ImageItem) -> Path:
         """Gorsel yoluna bakarak etiket dosyasi yolunu tahmin eder."""

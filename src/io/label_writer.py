@@ -1,11 +1,16 @@
 """YOLO .txt etiket dosyalarini yazma."""
 
 from pathlib import Path
-from typing import List
+from typing import List, Optional
+from src.io.annotation_identity import write_identity_metadata
 from src.models.annotation import Annotation
 
 
-def write_label_file(path: Path, annotations: List[Annotation]) -> bool:
+def write_label_file(
+    path: Path,
+    annotations: List[Annotation],
+    identity_metadata_path: Optional[Path] = None,
+) -> bool:
     """Annotation listesini YOLO .txt formatinda yazar.
 
     Bos liste = bos dosya (etiketlenmis ama nesne yok).
@@ -28,6 +33,9 @@ def write_label_file(path: Path, annotations: List[Annotation]) -> bool:
 
         # Atomik yeniden adlandirma
         tmp_path.replace(path)
+        if identity_metadata_path is not None:
+            if not write_identity_metadata(identity_metadata_path, annotations):
+                return False
         return True
     except Exception as e:
         print(f"Etiket dosyasi yazilamadi {path}: {e}")

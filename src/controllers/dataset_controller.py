@@ -206,9 +206,10 @@ class DatasetController(QObject):
         label_path = self._dataset.get_label_path_for_image(image)
         if label_path is None:
             return
-        write_label_file(label_path, image.annotations)
-        image.mark_clean()
-        self.image_saved.emit(image)
+        identity_path = self._dataset.get_annotation_identity_path(label_path)
+        if write_label_file(label_path, image.annotations, identity_path):
+            image.mark_clean()
+            self.image_saved.emit(image)
 
     def set_image_split(self, image, split: str):
         """Gorsel split atamasini degistirir."""
@@ -238,7 +239,9 @@ class DatasetController(QObject):
 
         _add_path(image.path)
         _add_path(self._dataset.get_label_path_for_image(image))
+        _add_path(self._dataset.get_annotation_identity_path_for_image(image))
         _add_path(getattr(image, "_pending_label_path", None))
+        _add_path(getattr(image, "_pending_identity_path", None))
         _add_path(image.path.with_suffix(".txt"))
 
         backups = {}
@@ -442,12 +445,22 @@ class DatasetController(QObject):
             if lbl_dir and Path(lbl_dir).exists():
                 lbl_path = Path(lbl_dir) / (img_path.stem + '.txt')
                 if lbl_path.exists():
-                    item.annotations = read_label_file(lbl_path, kpt_shape=kpt_shape)
+                    identity_path = self._dataset.get_annotation_identity_path(lbl_path)
+                    item.annotations = read_label_file(
+                        lbl_path,
+                        kpt_shape=kpt_shape,
+                        identity_metadata_path=identity_path,
+                    )
 
             if not item.annotations:
                 lbl_same = img_path.with_suffix('.txt')
                 if lbl_same.exists():
-                    item.annotations = read_label_file(lbl_same, kpt_shape=kpt_shape)
+                    identity_path = self._dataset.get_annotation_identity_path(lbl_same)
+                    item.annotations = read_label_file(
+                        lbl_same,
+                        kpt_shape=kpt_shape,
+                        identity_metadata_path=identity_path,
+                    )
 
             self._dataset.add_image(item)
             added += 1
