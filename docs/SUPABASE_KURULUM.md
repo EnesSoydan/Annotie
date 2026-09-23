@@ -24,11 +24,20 @@ Supabase projesi üzerinde ayağa kaldırır. ~10 dakika sürer.
 ## 2. Şemayı (migrasyon) çalıştır
 
 1. Sol menü → **SQL Editor** → **New query**.
-2. Depodaki [`supabase/migrations/0001_init.sql`](../supabase/migrations/0001_init.sql)
-   dosyasının **tüm içeriğini** kopyala-yapıştır.
-3. **Run** (Ctrl/Cmd+Enter). "Success. No rows returned" görmelisin.
+2. `supabase/migrations/` klasöründeki SQL dosyalarını numara sırasıyla
+   (`0001` → `0005`) aç ve her dosyanın **tüm içeriğini** ayrı bir
+   sorgu olarak çalıştır. Daha önce kurulum yaptıysan yalnızca henüz
+   uygulamadığın migration dosyalarından devam et.
+3. Her dosyada **Run** (Ctrl/Cmd+Enter) sonrası "Success. No rows returned"
+   görmelisin.
 4. Sol menü → **Table Editor**'da şu tabloları görmelisin:
-   `profiles, teams, memberships, invites, datasets, dataset_classes, images, annotations`.
+   `profiles, teams, memberships, invites, datasets, dataset_classes, images,
+   annotations, annotation_events`.
+
+`0005_annotation_operations.sql`, annotation nesnelerine sürüm/tombstone,
+datasetlere collaboration sequence ve atomik operation RPC'si ekler. Mevcut
+`label_content` verisini taşımaz veya silmez; bu nedenle eski bulut datasetleri bu
+aşamada kullanılmaya devam eder.
 
 > Doğrulama: **Authentication > Policies** altında her tabloda RLS'in **Enabled**
 > ve politikaların listelendiğini gör.
