@@ -89,7 +89,12 @@ def read_label_file(
 
     for parsed_index, (_, _, ann) in enumerate(parsed):
         entry_index = assigned_entry_indexes[parsed_index]
-        ann.uid = entries[entry_index]["uid"] if entry_index is not None else new_annotation_uid()
+        if entry_index is not None:
+            ann.uid = entries[entry_index]["uid"]
+            ann.version = entries[entry_index].get("version", 0)
+        else:
+            ann.uid = new_annotation_uid()
+            ann.version = 0
         annotations.append(ann)
 
     desired_entries = build_identity_entries(annotations)

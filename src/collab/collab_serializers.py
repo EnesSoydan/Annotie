@@ -13,6 +13,7 @@ def annotation_to_dict(ann: Annotation) -> dict:
         "uid": ann.uid,
         "ann_type": ann.ann_type.value,
         "class_id": ann.class_id,
+        "version": getattr(ann, "version", 0),
     }
 
     if ann.ann_type == AnnotationType.BBOX:
@@ -77,6 +78,7 @@ def dict_to_annotation(d: dict) -> Annotation:
 
     if uid:
         ann.uid = uid
+    ann.version = max(0, int(d.get("version", 0)))
     return ann
 
 

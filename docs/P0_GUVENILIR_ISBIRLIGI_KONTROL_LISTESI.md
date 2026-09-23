@@ -1,7 +1,7 @@
 # Annotie P0 Güvenilir İşbirliği Kontrol Listesi
 
 Son güncelleme: 23 Eylül 2026
-Genel ilerleme: **2 / 9 tamamlandı**
+Genel ilerleme: **3 / 9 tamamlandı**
 
 ## Durum işaretleri
 
@@ -31,8 +31,17 @@ Genel ilerleme: **2 / 9 tamamlandı**
   - Açık sorun: Canlı/staging PostgreSQL üzerinde yetkili ve viewer kullanıcılarla runtime smoke testi henüz yapılmadı. Uygulama/relay bu RPC'yi 3. ve 4. teslimatlar tamamlanana kadar kullanmaz.
   - Commit: `feat: add versioned annotation operation schema`
 
-- [ ] **3. Mevcut veri setlerinin güvenli taşınması**
-  - Plan: `label_content` verisini annotation satırlarına aktarıp `collab_schema_version=2` işaretlemek ve geçiş süresince snapshot'ı çift yazmak.
+- [x] **3. Mevcut veri setlerinin güvenli taşınması**
+  - Eksik: Eski ekip datasetlerinde tek doğruluk kaynağı `images.label_content` idi. Object version yerelde saklanmıyor, annotation satırları okunmuyor ve v1/v2 geçişi yarıda kalırsa dataset durumu belirlenemiyordu.
+  - Yapılan: `0006_collab_v2_migration.sql`; datasetlere `collab_schema_version`, görsellere `annotations_migrated_at`, idempotent görsel taşıma RPC'si ve yalnızca tüm görseller tamamlanınca v2 yapan finalize RPC'si ekledi.
+  - Taşıma davranışı: Ekip dataseti ilk açılırken legacy YOLO satırları eksiksiz parse edilir. Geçersiz tek satır varsa veri düşürmek yerine taşıma durur. Tamamlanan görseller retry'da tekrar yazılmaz; yarıda kalan dataset kaldığı yerden devam eder.
+  - Yeni doğruluk kaynağı: V2 dataset açılışı annotation satırlarını okur. DB satırları yerel YOLO dosyası ve `.annotie` UID/version metadata'sı olarak materialize edilir. Annotation modelleri ve collaboration serializer artık object version taşır.
+  - Dual-write: Annotation insert/update/tombstone sonrası PostgreSQL trigger aktif nesnelerden canonical YOLO metnini üretip `label_content` snapshot'ını aynı transaction'da yeniler. Eski snapshot silinmez ancak artık doğruluk kaynağı değildir.
+  - Geçiş yazımı: Mevcut kaydetme akışı yerel durum ile bilinen DB satırlarını karşılaştırıp create/modify/class_change/delete operasyonlarına ayırır. Başarılı RPC sürümleri modele ve `.annotie` dosyasına geri yazılır; aynı görselde üst üste kayıtlar sıraya alınır.
+  - Doğrulama: 14 yeni migration/dönüşüm/senkron/metadata testi eklendi. Tam test paketi PySide6/NumPy ortamında **39/39** geçti. 0006 migration `pglast` ile **17 statement** olarak hatasız ayrıştırıldı; `compileall` başarılı.
+  - Migration etkisi: Güncel istemciden önce 0006 uygulanmalıdır. `detect/segment/pose` eski task type adları desteklenir. Viewer, tamamlanmış v2 datasetleri yazma RPC'si çağırmadan okuyabilir.
+  - Açık sorun: Canlı/staging Supabase runtime testi yapılmadı. Relay henüz commit-before-broadcast uygulamadığı ve protocol-v2 kapısı koymadığı için karma eski/yeni istemci engeli 4. teslimatta tamamlanacak. Ağ kesintisinde kalıcı retry 6. teslimatı bekliyor.
+  - Commit: `feat: migrate cloud datasets to collaboration v2`
 
 - [ ] **4. Server-authoritative işlem akışı**
   - Plan: Operasyonu önce Supabase RPC'ye yazmak; yalnızca commit sonrası acknowledgement ve broadcast yapmak.

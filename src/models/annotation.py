@@ -27,6 +27,7 @@ class BBoxAnnotation:
     height: float
     ann_type: AnnotationType = field(default=AnnotationType.BBOX, init=False)
     uid: str = field(default_factory=lambda: str(uuid.uuid4()))
+    version: int = 0
 
     def to_yolo_line(self) -> str:
         return f"{self.class_id} {self.x_center:.6f} {self.y_center:.6f} {self.width:.6f} {self.height:.6f}"
@@ -51,6 +52,7 @@ class PolygonAnnotation:
     points: List[Tuple[float, float]]
     ann_type: AnnotationType = field(default=AnnotationType.POLYGON, init=False)
     uid: str = field(default_factory=lambda: str(uuid.uuid4()))
+    version: int = 0
 
     def to_yolo_line(self) -> str:
         coords = " ".join(f"{x:.6f} {y:.6f}" for x, y in self.points)
@@ -73,6 +75,7 @@ class OBBAnnotation:
     corners: List[Tuple[float, float]]  # 4 kose noktasi
     ann_type: AnnotationType = field(default=AnnotationType.OBB, init=False)
     uid: str = field(default_factory=lambda: str(uuid.uuid4()))
+    version: int = 0
 
     def to_yolo_line(self) -> str:
         coords = " ".join(f"{x:.6f} {y:.6f}" for x, y in self.corners)
@@ -99,6 +102,7 @@ class KeypointsAnnotation:
     keypoints: List[Tuple[float, float, int]]  # (x, y, visibility)
     ann_type: AnnotationType = field(default=AnnotationType.KEYPOINTS, init=False)
     uid: str = field(default_factory=lambda: str(uuid.uuid4()))
+    version: int = 0
 
     def to_yolo_line(self) -> str:
         bbox = f"{self.class_id} {self.x_center:.6f} {self.y_center:.6f} {self.width:.6f} {self.height:.6f}"
@@ -135,6 +139,7 @@ class ClassificationAnnotation:
     class_id: int
     ann_type: AnnotationType = field(default=AnnotationType.CLASSIFICATION, init=False)
     uid: str = field(default_factory=lambda: str(uuid.uuid4()))
+    version: int = 0
 
     def to_yolo_line(self) -> str:
         return f"{self.class_id}"

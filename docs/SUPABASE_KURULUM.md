@@ -25,7 +25,7 @@ Supabase projesi üzerinde ayağa kaldırır. ~10 dakika sürer.
 
 1. Sol menü → **SQL Editor** → **New query**.
 2. `supabase/migrations/` klasöründeki SQL dosyalarını numara sırasıyla
-   (`0001` → `0005`) aç ve her dosyanın **tüm içeriğini** ayrı bir
+   (`0001` → `0006`) aç ve her dosyanın **tüm içeriğini** ayrı bir
    sorgu olarak çalıştır. Daha önce kurulum yaptıysan yalnızca henüz
    uygulamadığın migration dosyalarından devam et.
 3. Her dosyada **Run** (Ctrl/Cmd+Enter) sonrası "Success. No rows returned"
@@ -35,9 +35,13 @@ Supabase projesi üzerinde ayağa kaldırır. ~10 dakika sürer.
    annotations, annotation_events`.
 
 `0005_annotation_operations.sql`, annotation nesnelerine sürüm/tombstone,
-datasetlere collaboration sequence ve atomik operation RPC'si ekler. Mevcut
-`label_content` verisini taşımaz veya silmez; bu nedenle eski bulut datasetleri bu
-aşamada kullanılmaya devam eder.
+datasetlere collaboration sequence ve atomik operation RPC'si ekler.
+`0006_collab_v2_migration.sql` ise legacy `label_content` snapshot'larının
+uygulama tarafından güvenli ve tekrar çalıştırılabilir biçimde annotation
+satırlarına taşınmasını sağlar. Bir ekip dataseti ilk kez açılırken taşıma
+tamamlanır ve `collab_schema_version=2` olur. `label_content` silinmez; her
+başarılı nesne işleminden sonra trigger tarafından YOLO uyumluluk snapshot'ı
+olarak yeniden üretilir.
 
 > Doğrulama: **Authentication > Policies** altında her tabloda RLS'in **Enabled**
 > ve politikaların listelendiğini gör.

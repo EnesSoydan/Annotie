@@ -18,6 +18,7 @@ class Dataset:
     task_type: Optional[AnnotationType] = None
     kpt_shape: Optional[Tuple[int, int]] = None  # (keypoint_sayisi, deger_sayisi) orn: (17, 3)
     is_temporary: bool = False  # Gecici klasor modu
+    collab_schema_version: int = 1  # Bulut ekip dataseti sema surumu
 
     # Yollar
     train_images_path: Optional[Path] = None

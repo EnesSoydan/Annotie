@@ -129,7 +129,7 @@ class ImageService:
         return res.count or 0
 
     def update_label(self, image_id: str, content: str):
-        """Görselin YOLO etiket içeriğini (write-through) kaydeder."""
+        """Yalnızca legacy v1 datasetlerin YOLO snapshot'ini kaydeder."""
         from datetime import datetime, timezone
         try:
             (self._client.table("images")

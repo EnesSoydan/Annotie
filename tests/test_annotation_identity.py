@@ -49,6 +49,7 @@ class AnnotationIdentityTests(unittest.TestCase):
         )
         original_uid = annotations[0].uid
         annotations[0].x_center = 0.75
+        annotations[0].version = 7
 
         self.assertTrue(write_label_file(
             self.label_path,
@@ -61,7 +62,32 @@ class AnnotationIdentityTests(unittest.TestCase):
         )
 
         self.assertEqual(reloaded[0].uid, original_uid)
+        self.assertEqual(reloaded[0].version, 7)
         self.assertAlmostEqual(reloaded[0].x_center, 0.75)
+
+    def test_legacy_metadata_is_upgraded_without_changing_uid(self):
+        legacy_uid = str(uuid.uuid4())
+        first_line = "0 0.500000 0.500000 0.200000 0.300000"
+        from src.io.annotation_identity import annotation_fingerprint
+
+        self.identity_path.parent.mkdir(parents=True)
+        self.identity_path.write_text(json.dumps({
+            "format_version": 1,
+            "annotations": [
+                {"uid": legacy_uid, "fingerprint": annotation_fingerprint(first_line)},
+            ],
+        }), encoding="utf-8")
+        self.label_path.write_text(first_line + "\n", encoding="utf-8")
+
+        annotations = read_label_file(
+            self.label_path,
+            identity_metadata_path=self.identity_path,
+        )
+        upgraded = json.loads(self.identity_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(annotations[0].uid, legacy_uid)
+        self.assertEqual(annotations[0].version, 0)
+        self.assertEqual(upgraded["annotations"][0]["version"], 0)
 
     def test_reordered_lines_follow_fingerprint_identity(self):
         annotations = read_label_file(

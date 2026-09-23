@@ -52,6 +52,7 @@ class AccountController(QObject):
         self._workers = []           # canli QThread referanslari (GC korumasi)
         # Ekip dataseti (write-through) durumu
         self._img_svc = None
+        self._ann_svc = None
         self._open_worker = None
         self._cloud_active = False
         self._cloud_dir = None
@@ -59,6 +60,9 @@ class AccountController(QObject):
         self._cloud_map = {}
         self._cloud_meta = {}
         self._cloud_hash = {}        # filename → content_hash (lazy indirme)
+        self._cloud_annotation_records = {}  # image_id → canonical DB satirlari
+        self._cloud_sync_inflight = set()
+        self._cloud_sync_pending = set()
         self._storage_client = None  # StorageClient (keep-alive havuzu)
         # Sınıf değişikliklerini DB'ye yazma (debounce)
         self._class_signals_connected = False
@@ -183,15 +187,18 @@ class AccountController(QObject):
         from PySide6.QtCore import Qt
         from src.cloud.datasets import DatasetService
         from src.cloud.images import ImageService
+        from src.cloud.annotations import AnnotationService
         from src.cloud.storage import StorageClient
         from src.widgets.cloud_open_worker import CloudDatasetOpenWorker
 
+        dataset_meta = dict(ds)
         uid = self._auth.user.id
         dsvc = DatasetService(uid)
         self._img_svc = ImageService(uid)
+        self._ann_svc = AnnotationService(uid)
         try:
-            images = self._img_svc.list_images(ds["id"])
-            classes = dsvc.list_classes(ds["id"])
+            images = self._img_svc.list_images(dataset_meta["id"])
+            classes = dsvc.list_classes(dataset_meta["id"])
         except Exception as exc:
             self.mw.status_bar.showMessage(f"Dataset bilgisi alınamadı: {exc}", 5000)
             return
@@ -211,7 +218,7 @@ class AccountController(QObject):
         self._storage_client = StorageClient()
         self._cloud_hash = {im["filename"]: im["content_hash"] for im in images}
         self._cloud_meta = {im["filename"]: dict(im) for im in images}
-        dest = Path.home() / ".annotie" / "cache" / "datasets" / ds["id"]
+        dest = Path.home() / ".annotie" / "cache" / "datasets" / dataset_meta["id"]
 
         # Lazy: yalnızca yapı + etiketler hazırlanır; görseller görüntülendikçe iner
         progress = QProgressDialog("Dataset hazırlanıyor...", None, 0, 0, self.mw)
@@ -221,23 +228,28 @@ class AccountController(QObject):
         progress.setMinimumDuration(0)
         progress.show()
 
-        worker = CloudDatasetOpenWorker(ds, images, classes, self._storage_client, dest,
+        worker = CloudDatasetOpenWorker(dataset_meta, images, classes,
+                                        self._storage_client, dest,
+                                        annotation_service=self._ann_svc,
                                         download_images=False, parent=self.mw)
         self._open_worker = worker
 
-        def on_done(local_dir, mapping):
+        def on_done(local_dir, mapping, annotation_records):
             progress.close()
             self._open_worker = None
             self._cloud_dir = local_dir
-            self._cloud_dataset_id = ds["id"]
+            self._cloud_dataset_id = dataset_meta["id"]
             self._cloud_map = mapping
+            self._cloud_annotation_records = annotation_records
             self._cloud_active = True
-            dset = self._build_dataset_model(ds, images, classes, Path(local_dir))
+            dset = self._build_dataset_model(
+                dataset_meta, images, classes, Path(local_dir)
+            )
             self._ensure_class_signals_connected()
             self.mw.ds_ctrl.set_ensure_local(self._ensure_cloud_image)
             self.mw.ds_ctrl.load_external_dataset(dset)
             self.mw.status_bar.showMessage(
-                f"Ekip dataseti açıldı: {ds['name']} ({len(images)} görsel) — "
+                f"Ekip dataseti açıldı: {dataset_meta['name']} ({len(images)} görsel) — "
                 "görseller görüntülendikçe iniyor", 6000)
             # Faz 7: canlı işbirliği odasına otomatik katıl (presence + canlı senkron)
             try:
@@ -251,7 +263,7 @@ class AccountController(QObject):
                     token = None
                 self.mw.collab_ctrl.set_dataset(dset)
                 self.mw.collab_ctrl.join_dataset_room(
-                    self._collab_url(), ds["id"], dn, token=token)
+                    self._collab_url(), dataset_meta["id"], dn, token=token)
             except Exception as exc:
                 # Canlı ekip bağlantısı başarısız olursa sessizce yutma;
                 # kullanıcı ekip datasetinin neden yalnız çalıştığını görsün.
@@ -282,6 +294,7 @@ class AccountController(QObject):
         from src.models.annotation import AnnotationType
 
         dset = Dataset(root_path=local_dir)
+        dset.collab_schema_version = int(ds.get("collab_schema_version") or 1)
         for c in sorted(classes, key=lambda x: x.get("class_index", 0)):
             color = QColor(c["color"]) if c.get("color") else None
             dset.classes.append(
@@ -375,44 +388,86 @@ class AccountController(QObject):
             pass
 
     def _on_cloud_image_saved(self, image):
-        """Ekip dataseti aktifken kaydedilen etiketi DB'ye write-through eder."""
-        if not self._cloud_active or not self.is_authenticated() or self._img_svc is None:
+        """Ekip datasetini object-version kontrollu annotation islemleriyle kaydeder."""
+        if not self._cloud_active or not self.is_authenticated() or self._ann_svc is None:
             return
         image_id = self._cloud_map.get(image.filename)
         if not image_id:
             return
-        # Yerel etiket dosyasını oku
-        content = ""
-        try:
-            ds = self.mw.ds_ctrl.dataset
-            label_path = ds.get_label_path_for_image(image) if ds else None
-            if label_path and label_path.exists():
-                content = label_path.read_text(encoding="utf-8")
-        except Exception:
-            pass
-        # Arka planda gönder (UI'yi her kayıtta bloke etme)
+
+        if image_id in self._cloud_sync_inflight:
+            self._cloud_sync_pending.add(image_id)
+            return
+
+        import copy
+        snapshot = copy.deepcopy(image.annotations)
+        known = copy.deepcopy(self._cloud_annotation_records.get(image_id, []))
+        annotation_service = self._ann_svc
+        self._cloud_sync_inflight.add(image_id)
         worker = _AuthWorker(
-            lambda iid=image_id, c=content: self._img_svc.update_label(iid, c), self)
-        worker.failed.connect(lambda _m: None)
+            lambda svc=annotation_service, did=self._cloud_dataset_id,
+                   iid=image_id, anns=snapshot, rows=known:
+                svc.sync_image(did, iid, anns, rows), self)
+
+        def on_done(records, iid=image_id, current_image=image):
+            self._cloud_annotation_records[iid] = records
+            versions = {str(row["uid"]): int(row["version"]) for row in records}
+            for annotation in current_image.annotations:
+                if annotation.uid in versions:
+                    annotation.version = versions[annotation.uid]
+            # DB'nin verdigi yeni object version'lari yerel .annotie metadata'sina yaz.
+            try:
+                from src.io.label_writer import write_label_file
+                dataset = self.mw.ds_ctrl.dataset
+                label_path = dataset.get_label_path_for_image(current_image) if dataset else None
+                if label_path:
+                    identity_path = dataset.get_annotation_identity_path(label_path)
+                    if not write_label_file(
+                        label_path, current_image.annotations, identity_path
+                    ):
+                        self.mw.status_bar.showMessage(
+                            "Bulut sürümleri yerel metadata'ya yazılamadı.", 7000
+                        )
+            except Exception as exc:
+                self.mw.status_bar.showMessage(
+                    f"Bulut sürümleri yerel metadata'ya yazılamadı: {exc}", 7000
+                )
+            self._cloud_sync_inflight.discard(iid)
+            if iid in self._cloud_sync_pending:
+                self._cloud_sync_pending.discard(iid)
+                self._on_cloud_image_saved(current_image)
+
+        def on_failed(message, iid=image_id):
+            self._cloud_sync_inflight.discard(iid)
+            self._cloud_sync_pending.discard(iid)
+            self.mw.status_bar.showMessage(
+                f"Annotation satırları kaydedilemedi: {message}", 7000
+            )
+
+        worker.done.connect(on_done)
+        worker.failed.connect(on_failed)
         self._track(worker)
         worker.start()
 
     def _on_cloud_image_deleted(self, image, delete_record=None):
         """Ekip datasetindeki yerel silmeyi Supabase images kaydına uygular."""
-        if not self._cloud_active or not self.is_authenticated() or self._img_svc is None:
+        if (not self._cloud_active or not self.is_authenticated()
+                or self._img_svc is None or self._ann_svc is None):
             return
         filename = image.filename
         image_id = self._cloud_map.get(filename)
         if not image_id:
             return
 
+        image_service = self._img_svc
         worker = _AuthWorker(
-            lambda iid=image_id: self._img_svc.delete_image(iid), self
+            lambda svc=image_service, iid=image_id: svc.delete_image(iid), self
         )
 
         def on_done(_result, fn=filename, iid=image_id):
             if self._cloud_map.get(fn) == iid:
                 self._cloud_map.pop(fn, None)
+            self._cloud_annotation_records.pop(iid, None)
             self.mw.status_bar.showMessage(
                 f"Ekip datasetinden silindi: {fn}", 3500
             )
@@ -429,7 +484,8 @@ class AccountController(QObject):
 
     def _on_cloud_image_restored(self, image):
         """Geri alınan görselin Supabase images satırını yeniden kurar."""
-        if not self._cloud_active or not self.is_authenticated() or self._img_svc is None:
+        if (not self._cloud_active or not self.is_authenticated()
+                or self._img_svc is None or self._ann_svc is None):
             return
         meta = self._cloud_meta.get(image.filename)
         if not meta:
@@ -444,8 +500,13 @@ class AccountController(QObject):
         except Exception:
             pass
 
-        worker = _AuthWorker(
-            lambda m=dict(meta), c=label_content: self._img_svc.add_image(
+        import copy
+        annotation_snapshot = copy.deepcopy(image.annotations)
+        annotation_service = self._ann_svc
+        image_service = self._img_svc
+
+        def restore_cloud_image(m=dict(meta), c=label_content, anns=annotation_snapshot):
+            row = image_service.add_image(
                 self._cloud_dataset_id,
                 m["filename"],
                 m["content_hash"],
@@ -455,12 +516,21 @@ class AccountController(QObject):
                 split=m.get("split"),
                 size_bytes=m.get("size_bytes"),
                 label_content=c,
-            ), self
-        )
+            )
+            if not row or not row.get("id"):
+                return row, []
+            records = annotation_service.migrate_image(
+                self._cloud_dataset_id, row["id"], anns
+            )
+            return row, records
 
-        def on_done(row, fn=image.filename):
+        worker = _AuthWorker(restore_cloud_image, self)
+
+        def on_done(result, fn=image.filename):
+            row, records = result
             if row and row.get("id"):
                 self._cloud_map[fn] = row["id"]
+                self._cloud_annotation_records[row["id"]] = records
             self.mw.status_bar.showMessage(
                 f"Ekip datasetine geri eklendi: {fn}", 3500
             )
@@ -492,6 +562,9 @@ class AccountController(QObject):
             self._cloud_map.clear()
             self._cloud_meta.clear()
             self._cloud_hash.clear()
+            self._cloud_annotation_records.clear()
+            self._cloud_sync_inflight.clear()
+            self._cloud_sync_pending.clear()
             # Yerel/başka datasete geçince ekip odasından çık
             try:
                 if self.mw.collab_ctrl.is_in_lobby:

@@ -47,7 +47,7 @@ def identity_metadata_path(dataset_root: Path, label_path: Path) -> Path:
         return base / "external" / f"{digest}.json"
 
 
-def load_identity_metadata(path: Path) -> Optional[list[dict[str, str]]]:
+def load_identity_metadata(path: Path) -> Optional[list[dict]]:
     """Gecerli metadata girdilerini okur; bozuk dosyada None dondurur."""
     path = Path(path)
     try:
@@ -64,13 +64,14 @@ def load_identity_metadata(path: Path) -> Optional[list[dict[str, str]]]:
     if not isinstance(raw_entries, list):
         return None
 
-    entries: list[dict[str, str]] = []
+    entries: list[dict] = []
     seen_uids: set[str] = set()
     for raw in raw_entries:
         if not isinstance(raw, dict):
             return None
         uid = raw.get("uid")
         fingerprint = raw.get("fingerprint")
+        version = raw.get("version", 0)
         if not is_valid_annotation_uid(uid) or uid in seen_uids:
             return None
         if not isinstance(fingerprint, str) or len(fingerprint) != 64:
@@ -79,12 +80,19 @@ def load_identity_metadata(path: Path) -> Optional[list[dict[str, str]]]:
             int(fingerprint, 16)
         except ValueError:
             return None
+        if not isinstance(version, int) or isinstance(version, bool) or version < 0:
+            return None
         seen_uids.add(uid)
-        entries.append({"uid": uid, "fingerprint": fingerprint.lower()})
+        entries.append({
+            "uid": uid,
+            "fingerprint": fingerprint.lower(),
+            "version": version,
+            **({"_needs_upgrade": True} if "version" not in raw else {}),
+        })
     return entries
 
 
-def build_identity_entries(annotations: Iterable[Annotation]) -> list[dict[str, str]]:
+def build_identity_entries(annotations: Iterable[Annotation]) -> list[dict]:
     """Annotation listesinden yazilabilir metadata girdileri uretir."""
     entries = []
     seen_uids: set[str] = set()
@@ -100,6 +108,7 @@ def build_identity_entries(annotations: Iterable[Annotation]) -> list[dict[str, 
         entries.append({
             "uid": uid,
             "fingerprint": annotation_fingerprint(annotation.to_yolo_line()),
+            "version": max(0, int(getattr(annotation, "version", 0))),
         })
     return entries
 
