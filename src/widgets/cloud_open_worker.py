@@ -15,6 +15,8 @@ from pathlib import Path
 import yaml
 from PySide6.QtCore import QThread, Signal
 
+from src.cloud.safe_paths import is_safe_cloud_filename, safe_child_path
+
 
 class CloudDatasetOpenWorker(QThread):
     progress = Signal(int, int, str)   # done, total, filename
@@ -54,9 +56,12 @@ class CloudDatasetOpenWorker(QThread):
             # Etiketleri yaz (yerel, hızlı) + filename→id eşleşmesi
             mapping = {}
             for img in self._images:
+                # DB'deki ad yerel yola eklenir; klasör dışına çıkan adları atla
+                if not is_safe_cloud_filename(img.get("filename")):
+                    continue
                 mapping[img["filename"]] = img["id"]
                 stem = Path(img["filename"]).stem
-                lbl = labels_dir / (stem + ".txt")
+                lbl = safe_child_path(labels_dir, stem + ".txt")
                 if self._annotations_by_image is not None:
                     from src.cloud.annotations import materialize_cloud_annotations
 
@@ -80,13 +85,14 @@ class CloudDatasetOpenWorker(QThread):
                 return
 
             # Görselleri paralel indir
-            total = len(self._images)
+            total = len(mapping)
             done_count = 0
             cancelled = False
             executor = concurrent.futures.ThreadPoolExecutor(max_workers=self._max_workers)
             futures = {
                 executor.submit(self._fetch_one, img, images_dir): img
                 for img in self._images
+                if img["filename"] in mapping
             }
             try:
                 for fut in concurrent.futures.as_completed(futures):
@@ -112,10 +118,10 @@ class CloudDatasetOpenWorker(QThread):
             self.failed.emit(f"Dataset hazırlanamadı: {exc}")
 
     def _fetch_one(self, img, images_dir: Path):
-        dest_path = images_dir / img["filename"]
+        dest_path = safe_child_path(images_dir, img["filename"])
         if dest_path.exists():
             return  # zaten var (cache)
-        blob = self._storage.download_to_cache(img["content_hash"])
+        blob = self._storage.download_to_cache(img["content_hash"], self._meta["id"])
         shutil.copyfile(blob, dest_path)
 
     def _write_yaml(self):

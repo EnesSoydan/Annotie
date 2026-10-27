@@ -25,14 +25,14 @@ Supabase projesi üzerinde ayağa kaldırır. ~10 dakika sürer.
 
 1. Sol menü → **SQL Editor** → **New query**.
 2. `supabase/migrations/` klasöründeki SQL dosyalarını numara sırasıyla
-   (`0001` → `0006`) aç ve her dosyanın **tüm içeriğini** ayrı bir
+   (`0001` → `0008`) aç ve her dosyanın **tüm içeriğini** ayrı bir
    sorgu olarak çalıştır. Daha önce kurulum yaptıysan yalnızca henüz
    uygulamadığın migration dosyalarından devam et.
 3. Her dosyada **Run** (Ctrl/Cmd+Enter) sonrası "Success. No rows returned"
    görmelisin.
 4. Sol menü → **Table Editor**'da şu tabloları görmelisin:
    `profiles, teams, memberships, invites, datasets, dataset_classes, images,
-   annotations, annotation_events`.
+   annotations, annotation_events, user_models, legacy_blob_grants`.
 
 `0005_annotation_operations.sql`, annotation nesnelerine sürüm/tombstone,
 datasetlere collaboration sequence ve atomik operation RPC'si ekler.
@@ -42,6 +42,35 @@ satırlarına taşınmasını sağlar. Bir ekip dataseti ilk kez açılırken ta
 tamamlanır ve `collab_schema_version=2` olur. `label_content` silinmez; her
 başarılı nesne işleminden sonra trigger tarafından YOLO uyumluluk snapshot'ı
 olarak yeniden üretilir.
+
+`0008_security_hardening.sql` güvenlik sertleştirmesidir ve tekrar
+çalıştırılabilir:
+
+- **Roller:** admin yalnızca annotator/viewer atayabilir/davet edebilir; owner
+  rolü doğrudan atanamaz, ekip sahibi (`owner_id`) değiştirilemez, owner
+  ekipten çıkarılamaz.
+- **Davetler:** davet kodları yalnızca owner/admin ve davet edilen kişiye
+  görünür. Kullanıcı adıyla gönderilen davet yalnızca o hesapla, e-postayla
+  gönderilen davet yalnızca o e-postanın hesabıyla kabul edilebilir.
+- **Kontrol kolonları:** `collaboration_sequence`, `collab_schema_version`,
+  `annotations_migrated_at` istemciden değiştirilemez (yalnızca RPC'ler yazar);
+  migrasyon RPC'si mevcut annotation satırlarını hiçbir durumda silmez.
+- **Dosya adları:** `images.filename` tek ve güvenli bir dosya adı olmalı
+  (`/ \ : * ? " < > |`, kontrol karakteri, `..` yok). Kısıt `NOT VALID`
+  eklendiği için mevcut satırları taramaz; yeni ve güncellenen satırlarda
+  zorlanır.
+- **Görsel depolama:** `legacy_blob_grants` tablosu, 0008 anındaki görsellerin
+  hangi ekibe ait olduğunu bir kez kaydeder. `storage-presign` eski
+  `blobs/<hash>` nesnelerini yalnızca bu kayıtla imzalar; yeni yüklemeler
+  `teams/<team_id>/blobs/<hash>` altına gider.
+- **Relay:** `my_dataset_role` RPC'si, relay'in odaya katılan kullanıcının
+  rolünü (viewer düzenleme yayınlayamaz) öğrenmesi içindir.
+
+> **Deploy sırası (0008):** önce bu migrasyon → `storage-presign` yeniden
+> deploy ([R2_KURULUM.md](R2_KURULUM.md)) → tüm ekip üyeleri yeni uygulama
+> sürümüne geçer → relay güncellenir ([RELAY_DEPLOY.md](RELAY_DEPLOY.md)).
+> Yeni presign, görsel indirirken `dataset_id` ister; **eski uygulama
+> sürümleri bu adımdan sonra ekip görsellerini indiremez.**
 
 > Doğrulama: **Authentication > Policies** altında her tabloda RLS'in **Enabled**
 > ve politikaların listelendiğini gör.
@@ -56,6 +85,9 @@ Geliştirme sırasında kayıt sonrası anında oturum almak için:
 2. **Confirm email** seçeneğini **kapat** → **Save**.
 
 > Üretimde bunu tekrar **açmanız** önerilir (e-posta doğrulama güvenlik için).
+> Onay kapalıyken herkes başkasının e-postasıyla kayıt olabilir; bu durumda
+> e-postayla gönderilen davetlerin "yalnızca o e-postanın sahibi kabul eder"
+> kontrolü (0008) koruma sağlamaz.
 
 ---
 

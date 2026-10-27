@@ -25,7 +25,9 @@ gösterilir; yalnızca "Kabul Et" denirse datasete yazılır.
 - **.pt**: yalnızca `ultralytics` kuruluysa çalışır (exe'de yoktur).
 
 ## Sunucu kurulumu (bir kez)
-1. Supabase SQL Editor'de `supabase/migrations/0007_user_models.sql` çalıştırın.
+1. Supabase SQL Editor'de `supabase/migrations/0007_user_models.sql` ve ardından
+   `0008_security_hardening.sql` çalıştırın (yeni presign 0008'deki
+   `legacy_blob_grants` tablosunu okur; bkz. [SUPABASE_KURULUM.md](SUPABASE_KURULUM.md)).
 2. `storage-presign` Edge Function'ını yeniden deploy edin
    (`supabase functions deploy storage-presign`). "Verify JWT with legacy secret"
    **kapalı** kalmalı. Modeller R2'de `models/<kullanıcı_id>/<sha256>` altında tutulur.

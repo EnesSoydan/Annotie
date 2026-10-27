@@ -144,6 +144,12 @@ class AccountController(QObject):
     # ─── Baslangic: oturum geri yukleme ────────────────────────────────────
     def start(self):
         """Kayitli token varsa oturumu arka planda geri yukler."""
+        # Relay her join'de token ister (manuel lobiler dahil); yeniden
+        # bağlantılarda süresi dolmuş token gitmesin diye her seferinde sorulur.
+        try:
+            self.mw.collab_ctrl.set_token_provider(self.current_access_token)
+        except Exception:
+            pass
         if not self._available or self._auth is None:
             return
         worker = _AuthWorker(self._auth.restore_session, self)
@@ -151,6 +157,16 @@ class AccountController(QObject):
         worker.failed.connect(lambda _m: None)
         self._track(worker)
         worker.start()
+
+    def current_access_token(self):
+        """Güncel Supabase access token'ı (giriş yoksa None)."""
+        if not self.is_authenticated():
+            return None
+        try:
+            sess = supabase_client.get_client().auth.get_session()
+            return sess.access_token if sess else None
+        except Exception:
+            return None
 
     def _on_restored(self, user):
         self._refresh_menu()
@@ -210,6 +226,16 @@ class AccountController(QObject):
         except Exception as exc:
             self.mw.status_bar.showMessage(f"Dataset bilgisi alınamadı: {exc}", 5000)
             return
+        # Dosya adı yerel yola eklenecek; klasör dışına çıkabilen kayıtları reddet
+        from src.cloud.safe_paths import split_safe_image_rows
+        images, rejected_images = split_safe_image_rows(images)
+        if rejected_images:
+            from PySide6.QtWidgets import QMessageBox
+            names = ", ".join(repr(r.get("filename")) for r in rejected_images[:5])
+            QMessageBox.warning(
+                self.mw, "Güvensiz Dosya Adları",
+                f"{len(rejected_images)} görsel güvensiz dosya adı nedeniyle "
+                f"açılmadı: {names}")
         if not images:
             from PySide6.QtWidgets import QMessageBox
             QMessageBox.information(self.mw, "Boş Dataset",
@@ -223,7 +249,7 @@ class AccountController(QObject):
         except Exception:
             pass
 
-        self._storage_client = StorageClient()
+        self._storage_client = StorageClient(dataset_id=dataset_meta["id"])
         self._cloud_hash = {im["filename"]: im["content_hash"] for im in images}
         self._cloud_meta = {im["filename"]: dict(im) for im in images}
         dest = Path.home() / ".annotie" / "cache" / "datasets" / dataset_meta["id"]
@@ -317,13 +343,15 @@ class AccountController(QObject):
             except ValueError:
                 pass
 
+        from src.cloud.safe_paths import safe_child_path
+
         images_dir = local_dir / "images"
         labels_dir = local_dir / "labels"
         for im in images:
             fn = im["filename"]
-            item = ImageItem(path=images_dir / fn,
+            item = ImageItem(path=safe_child_path(images_dir, fn),
                              split=im.get("split") or "unassigned")
-            lbl = labels_dir / (Path(fn).stem + ".txt")
+            lbl = safe_child_path(labels_dir, Path(fn).stem + ".txt")
             if lbl.exists():
                 item._pending_label_path = lbl
                 item._pending_identity_path = dset.get_annotation_identity_path(lbl)

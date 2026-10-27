@@ -3,7 +3,7 @@
 import time
 import uuid
 import string
-import random
+import secrets
 from dataclasses import dataclass, field
 from typing import Dict, Optional
 
@@ -55,7 +55,8 @@ class LobbyManager:
     def _generate_code(self) -> str:
         chars = string.ascii_uppercase + string.digits
         while True:
-            code = ''.join(random.choices(chars, k=LOBBY_CODE_LENGTH))
+            # Lobi kodu tahmin edilememeli (random modülü kriptografik değil)
+            code = ''.join(secrets.choice(chars) for _ in range(LOBBY_CODE_LENGTH))
             if code not in self._lobbies:
                 return code
 

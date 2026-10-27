@@ -99,16 +99,33 @@ def main() -> int:
     cached = storage.cached_path(expected_hash)
     if cached:
         cached.unlink()
-    path = storage.download_to_cache(expected_hash)
+    path = storage.download_to_cache(expected_hash, ds["id"])
     downloaded = path.read_bytes()
     if sha256_bytes(downloaded) != expected_hash:
         _fail("İndirilen bayt hash'i uyuşmuyor"); return 1
     _ok(f"R2'den indirildi ve cache'lendi: {path.name[:16]}…")
 
     # İkinci indirme cache'ten gelmeli (lazy)
-    path2 = storage.download_to_cache(expected_hash)
+    path2 = storage.download_to_cache(expected_hash, ds["id"])
     if path2 == path:
         _ok("İkinci erişim yerel cache'ten geldi (lazy fetch çalışıyor)")
+
+    # Kiracılar arası erişim: başka bir ekip aynı hash'le sahte bir satır
+    # oluştursa bile ilk ekibin blob'unu okuyamamalı (0008 + presign v2).
+    sfx2 = uuid.uuid4().hex[:8]
+    other = auth.sign_up(f"store_{sfx2}@example.com", "Test1234!", username=f"store_{sfx2}")
+    tsvc2, dsvc2, isvc2 = TeamService(other.id), DatasetService(other.id), ImageService(other.id)
+    tsvc2.create_team("Yabancı Ekip " + sfx2[:4])
+    ds2 = dsvc2.create_dataset(tsvc2.list_my_teams()[0]["id"], "Sahte", "bbox")
+    isvc2.add_image(ds2["id"], "stolen.png", expected_hash, f"blobs/{expected_hash}")
+    path.unlink()
+    try:
+        StorageClient().download_to_cache(expected_hash, ds2["id"])
+    except Exception as exc:
+        _ok(f"Başka ekibin blob'u okunamadı (beklenen): {str(exc)[:80]}")
+    else:
+        _fail("Başka ekibin blob'u okunabildi — presign v2 deploy edilmemiş olabilir")
+        return 1
 
     print("\n== Test tamamlandı: FAZ5_STORAGE_OK ==")
     return 0

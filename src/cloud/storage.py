@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import io
+import threading
 from pathlib import Path
 from typing import Optional
 
@@ -42,10 +43,12 @@ def sha256_file(path: Path) -> str:
 
 class StorageClient:
     def __init__(self, client=None, config: Optional[CloudConfig] = None,
-                 timeout: float = 120.0):
+                 timeout: float = 120.0, dataset_id: Optional[str] = None):
         self._client = client or get_client()
         self._cfg = config or CloudConfig.load()
         self._timeout = timeout
+        # Görsel GET yetkisi dataset üyeliğiyle verilir; indirmelerde varsayılan
+        self._dataset_id = dataset_id
         # Paylaşımlı bağlantı havuzu (keep-alive) — her istekte yeni TLS
         # bağlantısı açmayı önler; Windows'ta soket/port tükenmesini ve
         # zamanla yavaşlamayı engeller. httpx.Client eşzamanlı kullanım için güvenli.
@@ -120,17 +123,25 @@ class StorageClient:
         p = CACHE_DIR / content_hash
         return p if p.is_file() else None
 
-    def download_to_cache(self, content_hash: str) -> Path:
+    def download_to_cache(self, content_hash: str,
+                          dataset_id: Optional[str] = None) -> Path:
         existing = self.cached_path(content_hash)
         if existing:
             return existing
-        pre = self._presign(None, content_hash, "get")
+        dataset_id = dataset_id or self._dataset_id
+        if not dataset_id:
+            raise StorageError("Görsel indirmek için dataset kimliği gerekli.")
+        pre = self._presign(dataset_id, content_hash, "get")
         try:
             resp = self._http.get(pre["url"])
         except httpx.HTTPError as exc:
             raise StorageError(f"İndirme isteği başarısız: {exc}")
         if resp.status_code != 200:
             raise StorageError(f"İndirme hatası ({resp.status_code}): {resp.text[:200]}")
+        # İçerik-adresli depo: bayt hash'i tutmuyorsa nesne bozulmuş ya da
+        # üzerine yazılmıştır; cache'e almadan reddet.
+        if sha256_bytes(resp.content) != content_hash:
+            raise StorageError("İndirilen görsel bozuk (hash uyuşmuyor).")
         return self._write_cache(content_hash, resp.content)
 
     # ─── Kullanıcı modelleri ───────────────────────────────────────────────
@@ -201,5 +212,17 @@ class StorageClient:
     def _write_cache(content_hash: str, data: bytes) -> Path:
         CACHE_DIR.mkdir(parents=True, exist_ok=True)
         p = CACHE_DIR / content_hash
-        p.write_bytes(data)
+        # Yarım yazılmış dosya cache'te kalıcı bozuk blob olarak kalmasın
+        tmp = p.with_name(f"{content_hash}.{threading.get_ident()}.part")
+        try:
+            tmp.write_bytes(data)
+            try:
+                tmp.replace(p)
+            except OSError:
+                # Aynı blob'u eşzamanlı indiren başka bir iş parçacığı önce yazdı
+                # (Windows açık hedefin üzerine yazmaya izin vermez).
+                if not p.is_file():
+                    raise
+        finally:
+            tmp.unlink(missing_ok=True)
         return p

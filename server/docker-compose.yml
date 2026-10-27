@@ -2,12 +2,16 @@ services:
   relay:
     build: .
     container_name: annotie-relay
+    # Değerler server/.env dosyasından okunur (bkz. .env.example).
+    # Varsayılan yalnızca bu makineden erişim: TLS'li bir reverse proxy (Caddy)
+    # arkasında yayınlayın. Aynı LAN'daki istemciler doğrudan bağlanacaksa
+    # .env içinde RELAY_BIND_ADDR=0.0.0.0 ayarlayın.
     ports:
-      - "8765:8765"
+      - "${RELAY_BIND_ADDR:-127.0.0.1}:8765:8765"
     restart: unless-stopped
-    # Kimlik doğrulamayı ETKİNLEŞTİRMEK için (public deploy önerilir):
-    # aşağıdaki iki satırın yorumunu kaldırıp değerleri girin. Verilmezse
-    # relay açık moddadır (LAN/test). Sadece anon/publishable key kullanın.
-    # environment:
-    #   SUPABASE_URL: "https://YOUR-PROJECT-REF.supabase.co"
-    #   SUPABASE_ANON_KEY: "sb_publishable_..."
+    # Kimlik doğrulama ZORUNLU: SUPABASE_URL + SUPABASE_ANON_KEY verilmezse relay
+    # başlamaz. Yalnızca güvenilir LAN/test için RELAY_INSECURE_OPEN=1.
+    environment:
+      SUPABASE_URL: "${SUPABASE_URL:-}"
+      SUPABASE_ANON_KEY: "${SUPABASE_ANON_KEY:-}"
+      RELAY_INSECURE_OPEN: "${RELAY_INSECURE_OPEN:-0}"

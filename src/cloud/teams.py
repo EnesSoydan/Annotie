@@ -32,6 +32,15 @@ def role_label(role: Optional[str]) -> str:
     return ROLE_LABELS.get(role or "", role or "?")
 
 
+def assignable_roles_for(my_role: Optional[str]) -> list[str]:
+    """Çağıranın atayabileceği roller (0008 can_manage_role ile aynı kural)."""
+    if my_role == "owner":
+        return list(ASSIGNABLE_ROLES)
+    if my_role == "admin":
+        return [r for r in ASSIGNABLE_ROLES if r != "admin"]
+    return []
+
+
 class TeamService:
     def __init__(self, user_id: str, client=None):
         self._client = client or get_client()
@@ -147,6 +156,9 @@ class TeamService:
     def _friendly_accept(exc: Exception) -> str:
         m = str(exc)
         low = m.lower()
+        if "baska bir hesaba" in low:
+            return ("Bu davet başka bir hesaba gönderilmiş. "
+                    "Davet edilen kullanıcı adı veya e-postayla giriş yapın.")
         if "gecersiz" in low or "suresi" in low or "expired" in low or "invalid" in low:
             return "Geçersiz veya süresi dolmuş davet kodu."
         return f"Davet kabul edilemedi: {m}"

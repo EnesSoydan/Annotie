@@ -75,6 +75,24 @@ supabase functions deploy storage-presign --project-ref YOUR-PROJECT-REF
 > `verify_jwt` varsayılan olarak **açık** kalmalı — fonksiyon yalnızca giriş yapmış
 > kullanıcıları kabul eder.
 
+**Anahtar şeması (0008 sonrası):**
+
+| Nesne | R2 anahtarı | Yetki |
+|---|---|---|
+| Yeni görseller | `teams/<team_id>/blobs/<sha256>` | PUT: ekipte owner/admin/annotator. GET: istekteki `dataset_id` datasetinde bu hash'e sahip görsel + ekip üyeliği |
+| 0008 öncesi görseller | `blobs/<sha256>` | Yalnızca GET, ve yalnızca `legacy_blob_grants` tablosunda o ekip için kayıt varsa |
+| Kullanıcı modelleri | `models/<user_id>/<sha256>` | Yalnızca sahibi |
+
+Anahtar her zaman sunucuda `dataset_id`'nin ekibinden türetilir; istemcinin
+yazdığı `images.storage_key` yalnızca bilgi amaçlıdır. İstemci indirdiği her
+görselin SHA-256'sını doğrular, uyuşmayanı cache'e almaz.
+
+> **Güncelleme yaparken:** `storage-presign`'ı yeniden deploy etmeden önce
+> `0008_security_hardening.sql`'i çalıştır (fonksiyon `legacy_blob_grants`
+> tablosunu okur). Deploy sonrası eski uygulama sürümleri, görsel indirirken
+> `dataset_id` göndermedikleri için **400** alır; ekipteki herkes yeni sürüme
+> geçmelidir. Mevcut nesneler taşınmaz, yerinde okunmaya devam eder.
+
 ---
 
 ## 5. Doğrulama
@@ -86,7 +104,8 @@ py -3.12 scripts/test_storage.py
 ```
 
 Beklenen: hash → presign(put) → upload → metadata kaydı → presign(get) →
-download → yerel cache doğrulaması (`[OK]`).
+download → yerel cache doğrulaması → başka bir ekip aynı hash'le sahte satır
+oluştursa bile blob'u okuyamaz (`[OK]`).
 
 ---
 
@@ -98,4 +117,7 @@ download → yerel cache doğrulaması (`[OK]`).
 | `Yetkisiz` (401) | Giriş yapılmamış / token süresi dolmuş |
 | `Yazma yetkiniz yok` (403) | Kullanıcı ekipte viewer; owner/admin/annotator olmalı |
 | Upload 403 (R2) | API Token izni "Object Read & Write" ve doğru bucket mı? |
-| `Görsele erişim yok` (403, get) | İlgili `images` kaydı yok veya kullanıcı ekip üyesi değil |
+| `Görsele erişim yok` (403, get) | Bu datasette o hash'e sahip `images` kaydı yok veya kullanıcı ekip üyesi değil |
+| `dataset_id (uuid) gerekli` (400) | Eski uygulama sürümü; yeni sürüme güncelle |
+| İndirme 404 (R2), eski görsel | 0008 çalıştırılmadan presign deploy edilmiş → `legacy_blob_grants` yok; 0008'i çalıştır |
+| `İndirilen görsel bozuk (hash uyuşmuyor)` | R2'deki nesne değiştirilmiş/bozuk; görseli yeniden yükle |

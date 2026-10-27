@@ -56,6 +56,9 @@ class CollabController(QObject):
         self._session_server_url = ""
         self._session_lobby_id = ""
         self._session_token: Optional[str] = None
+        # Her (yeniden) bağlantıda güncel Supabase access token'ını verir; relay
+        # kimlik doğrulaması tüm join'lerde zorunlu, token ~1 saatte yenilenir.
+        self._token_provider = None
         self._team_mode = False   # ekip dataseti odası (manifest'ten dataset kurma yok)
 
         # Modify throttle
@@ -143,6 +146,20 @@ class CollabController(QObject):
         self._session_token = token
         self._client.connect_to_server(server_url)
 
+    def set_token_provider(self, provider):
+        """provider() → güncel access token veya None (giriş yoksa)."""
+        self._token_provider = provider
+
+    def _current_token(self) -> Optional[str]:
+        if self._token_provider is not None:
+            try:
+                token = self._token_provider()
+            except Exception:
+                token = None
+            if token:
+                return token
+        return self._session_token
+
     def _on_client_connected(self):
         """Her bağlantıda aktif oturuma yeniden katılır.
 
@@ -150,26 +167,29 @@ class CollabController(QObject):
         bir bağlantı oluşur; önceki oda üyeliği otomatik taşınmaz.
         """
         if self._session_kind == "create":
-            self._client.send({
+            msg = {
                 "type": MsgType.CREATE_LOBBY,
                 "display_name": self._display_name,
                 "manifest": self._build_manifest(),
-            })
+            }
         elif self._session_kind == "lobby":
-            self._client.send({
+            msg = {
                 "type": MsgType.JOIN_LOBBY,
                 "lobby_id": self._session_lobby_id,
                 "display_name": self._display_name,
-            })
+            }
         elif self._session_kind == "room":
             msg = {
                 "type": MsgType.JOIN_ROOM,
                 "room_id": self._session_lobby_id,
                 "display_name": self._display_name,
             }
-            if self._session_token:
-                msg["token"] = self._session_token
-            self._client.send(msg)
+        else:
+            return
+        token = self._current_token()
+        if token:
+            msg["token"] = token
+        self._client.send(msg)
 
     def leave_lobby(self):
         self._team_mode = False

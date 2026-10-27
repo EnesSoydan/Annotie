@@ -19,7 +19,9 @@ from PySide6.QtWidgets import (
     QInputDialog, QMessageBox, QApplication,
 )
 
-from src.cloud.teams import TeamService, TeamError, role_label, ASSIGNABLE_ROLES
+from src.cloud.teams import (
+    TeamService, TeamError, role_label, ASSIGNABLE_ROLES, assignable_roles_for,
+)
 
 
 class TeamsDialog(QDialog):
@@ -160,6 +162,10 @@ class TeamsDialog(QDialog):
         self.pending_label.setVisible(can_manage)
         self.team_invites.setVisible(can_manage)
         if can_manage:
+            # Admin yalnızca annotator/viewer davet edebilir (DB de zorlar)
+            self.role_combo.clear()
+            for r in assignable_roles_for(t.get("role")):
+                self.role_combo.addItem(role_label(r), r)
             self._reload_team_invites()
 
     def _reload_team_invites(self):

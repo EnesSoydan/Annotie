@@ -15,6 +15,7 @@ from pathlib import Path
 
 from PySide6.QtCore import QThread, Signal
 
+from src.cloud.safe_paths import safe_cloud_filename
 from src.cloud.storage import sha256_bytes
 
 
@@ -74,6 +75,8 @@ class UploadWorker(QThread):
 
     def _upload_one(self, item) -> dict:
         fp = Path(item["path"])
+        # Diğer üyeler bu adı kendi diskine yazacak; DB de güvensiz adı reddeder
+        safe_cloud_filename(fp.name)
         data = fp.read_bytes()
         content_hash = sha256_bytes(data)
         ex = self._existing.get(fp.name)
