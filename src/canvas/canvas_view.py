@@ -180,12 +180,29 @@ class CanvasView(QGraphicsView):
                 # Mouse viewport'a girdiÄŸinde klavye odaÄŸÄ±nÄ± al
                 self.viewport().setFocus(Qt.FocusReason.OtherFocusReason)
             elif t == QEvent.Type.KeyPress:
-                ke = event
-                if ke.key() in (Qt.Key.Key_Delete, Qt.Key.Key_Backspace):
-                    self.delete_image_requested.emit()
-                    ke.accept()
+                if self._handle_delete_key(event):
                     return True
         return super().eventFilter(obj, event)
+
+    def _tool_is_drawing(self) -> bool:
+        tool = self._active_tool
+        if tool is None:
+            return False
+        return bool(getattr(tool, '_drawing', False)
+                    or getattr(tool, '_phase', 0) not in (0, "bbox")
+                    or len(getattr(tool, '_vertices', []) or []) > 0)
+
+    def _handle_delete_key(self, event: QKeyEvent) -> bool:
+        """Del/Backspace: çizim sürerken araca gider (ör. polygonda son noktayı
+        siler); aksi halde seçili etiketi ya da görseli silme isteği yayılır."""
+        if event.key() not in (Qt.Key.Key_Delete, Qt.Key.Key_Backspace):
+            return False
+        if self._tool_is_drawing():
+            self._active_tool.key_press(event)
+        else:
+            self.delete_image_requested.emit()
+        event.accept()
+        return True
 
     def mouseMoveEvent(self, event: QMouseEvent):
         scene_pos = self.mapToScene(event.pos())
@@ -274,10 +291,8 @@ class CanvasView(QGraphicsView):
         if event.key() == Qt.Key.Key_Space and not event.isAutoRepeat():
             self.setCursor(Qt.CursorShape.OpenHandCursor)
 
-        # Del/Backspace: o anda yuklu olan gorseli sil.
-        if event.key() in (Qt.Key.Key_Delete, Qt.Key.Key_Backspace):
-            self.delete_image_requested.emit()
-            event.accept()
+        # Del/Backspace: secili etiketi / gorseli sil (cizim surerken araca gider)
+        if self._handle_delete_key(event):
             return
 
         if self._active_tool:

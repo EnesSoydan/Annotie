@@ -103,31 +103,45 @@ class KeypointsAnnotation:
     ann_type: AnnotationType = field(default=AnnotationType.KEYPOINTS, init=False)
     uid: str = field(default_factory=lambda: str(uuid.uuid4()))
     version: int = 0
+    # Dosyadaki keypoint boyutu: data.yaml kpt_shape [k, 2] (x y) veya [k, 3] (x y v).
+    # Yazarken korunur; aksi halde [k, 2] datasetler x y v ile bozulurdu.
+    kpt_dims: int = 3
 
     def to_yolo_line(self) -> str:
         bbox = f"{self.class_id} {self.x_center:.6f} {self.y_center:.6f} {self.width:.6f} {self.height:.6f}"
-        kps = " ".join(f"{x:.6f} {y:.6f} {v}" for x, y, v in self.keypoints)
-        return f"{bbox} {kps}"
+        if self.kpt_dims == 2:
+            kps = " ".join(f"{x:.6f} {y:.6f}" for x, y, _v in self.keypoints)
+        else:
+            kps = " ".join(f"{x:.6f} {y:.6f} {v}" for x, y, v in self.keypoints)
+        return f"{bbox} {kps}".rstrip()
 
     @classmethod
-    def from_yolo_line(cls, parts: List[str], kpt_count: int = None) -> 'KeypointsAnnotation':
+    def from_yolo_line(cls, parts: List[str], kpt_count: int = None,
+                       kpt_dims: int = None) -> 'KeypointsAnnotation':
         class_id = int(parts[0])
         x_center = float(parts[1])
         y_center = float(parts[2])
         width = float(parts[3])
         height = float(parts[4])
         kp_values = [float(v) for v in parts[5:]]
+        if kpt_dims not in (2, 3):
+            if kpt_count and len(kp_values) == kpt_count * 2:
+                kpt_dims = 2
+            else:
+                kpt_dims = 3
         keypoints = []
-        for i in range(0, len(kp_values), 3):
-            if i + 2 < len(kp_values):
-                keypoints.append((kp_values[i], kp_values[i + 1], int(kp_values[i + 2])))
-            elif i + 1 < len(kp_values):
-                keypoints.append((kp_values[i], kp_values[i + 1], 2))
+        for i in range(0, len(kp_values), kpt_dims):
+            chunk = kp_values[i:i + kpt_dims]
+            if len(chunk) == 3:
+                keypoints.append((chunk[0], chunk[1], int(chunk[2])))
+            elif len(chunk) == 2:
+                keypoints.append((chunk[0], chunk[1], 2))
         return cls(
             class_id=class_id,
             x_center=x_center, y_center=y_center,
             width=width, height=height,
-            keypoints=keypoints
+            keypoints=keypoints,
+            kpt_dims=kpt_dims,
         )
 
 
@@ -158,12 +172,13 @@ def detect_annotation_type(parts: List[str], kpt_shape: Optional[Tuple[int, int]
     n = len(parts) - 1  # class_id haric
     if n == 0:
         return AnnotationType.CLASSIFICATION
+    # Pose dataseti (kpt_shape var) uzunlugu tutan satirlari OBB/polygon'a kaptirmaz
+    if kpt_shape and n == 4 + kpt_shape[0] * kpt_shape[1]:
+        return AnnotationType.KEYPOINTS
     if n == 4:
         return AnnotationType.BBOX
     if n == 8:
         return AnnotationType.OBB
-    if kpt_shape and n == 4 + kpt_shape[0] * kpt_shape[1]:
-        return AnnotationType.KEYPOINTS
     # 4'ten buyuk cift sayi ve 8 degil -> segmentasyon
     if n > 4 and n % 2 == 0 and n != 8:
         return AnnotationType.POLYGON
@@ -194,6 +209,8 @@ def parse_annotation_line(line: str, task_type: Optional[AnnotationType] = None,
     elif task_type == AnnotationType.OBB:
         return OBBAnnotation.from_yolo_line(parts)
     elif task_type == AnnotationType.KEYPOINTS:
+        if kpt_shape:
+            return KeypointsAnnotation.from_yolo_line(parts, kpt_shape[0], kpt_shape[1])
         return KeypointsAnnotation.from_yolo_line(parts)
     elif task_type == AnnotationType.CLASSIFICATION:
         return ClassificationAnnotation.from_yolo_line(parts)

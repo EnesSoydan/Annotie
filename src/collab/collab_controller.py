@@ -590,9 +590,16 @@ class CollabController(QObject):
     def _handle_remote_class_delete(self, msg: dict):
         if not self._dataset:
             return
-        self._dataset.remove_class(msg["class_id"])
+        # Uzak silmede de etiketler yeniden eşlenir (yoksa sınıflar kayar)
+        self._dataset.remove_class_and_remap(msg["class_id"])
         if self._main_window and hasattr(self._main_window, 'class_panel'):
             self._main_window.class_panel.load_classes(self._dataset.classes)
+        if self._main_window and hasattr(self._main_window, 'ds_ctrl'):
+            self._applying_remote = True
+            try:
+                self._main_window.ds_ctrl.on_classes_remapped()
+            finally:
+                self._applying_remote = False
 
     # ── Yardımcı ───────────────────────────────────────────────────────
 

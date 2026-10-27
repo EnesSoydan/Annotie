@@ -3,7 +3,7 @@
 from PySide6.QtWidgets import (
     QDockWidget, QWidget, QVBoxLayout, QHBoxLayout,
     QListWidget, QListWidgetItem, QLineEdit, QLabel,
-    QPushButton, QMenu, QButtonGroup, QAbstractButton
+    QPushButton, QMenu, QButtonGroup, QAbstractButton, QMessageBox
 )
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QColor
@@ -298,9 +298,20 @@ class ImageListPanel(QDockWidget):
         )
         menu.exec(self._list.viewport().mapToGlobal(pos))
 
+    def set_split_handler(self, handler):
+        """handler(image, split) -> hata mesaji | None; dosyalari da tasir."""
+        self._split_handler = handler
+
     def _set_split(self, image_item, split: str):
-        image_item.split = split
-        image_item.mark_dirty()
+        handler = getattr(self, "_split_handler", None)
+        if handler is not None:
+            error = handler(image_item, split)
+            if error:
+                QMessageBox.warning(self, "Split Değiştirilemedi", error)
+                return
+        else:
+            image_item.split = split
+            image_item.mark_dirty()
         self.refresh_item(image_item)
         self._apply_filter()
 

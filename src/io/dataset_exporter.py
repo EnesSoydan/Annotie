@@ -1,12 +1,42 @@
 """YOLO formatinda veriseti export etme."""
 
+import dataclasses
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional, Set
 import shutil
 from src.models.dataset import Dataset
+from src.io.label_reader import read_label_file
 from src.io.label_writer import write_label_file
 from src.io.annotation_identity import identity_metadata_path
 from src.io.yaml_handler import write_data_yaml
+
+
+def _annotations_for_export(img) -> List:
+    """Gorselin etiketleri; editorde hic acilmamis (lazy) gorseller diskten okunur.
+
+    load_pending_labels() cagrilmaz: export worker thread'inde calisir ve
+    ImageItem'i UI thread'inden habersiz degistirmemelidir.
+    """
+    pending = getattr(img, "_pending_label_path", None)
+    if pending is not None:
+        return read_label_file(
+            pending,
+            kpt_shape=getattr(img, "_pending_kpt_shape", None),
+            identity_metadata_path=getattr(img, "_pending_identity_path", None),
+        )
+    return list(img.annotations)
+
+
+def _unique_stem(stem: str, used: Set[str]) -> str:
+    """Ayni split'e ayni adla dusen gorseller (a.jpg + a.png de ayni a.txt'yi
+    paylasir) birbirinin uzerine yazmasin."""
+    candidate = stem
+    n = 1
+    while candidate.lower() in used:
+        candidate = f"{stem}_{n}"
+        n += 1
+    used.add(candidate.lower())
+    return candidate
 
 
 def export_dataset(dataset: Dataset, export_path: str, copy_images: bool = True,
@@ -36,11 +66,13 @@ def export_dataset(dataset: Dataset, export_path: str, copy_images: bool = True,
         # Gorselleri ve etiketleri yaz
         images = dataset.get_all_images()
         total = len(images)
+        used_names = {folder: set() for folder in SPLIT_FOLDER.values()}
         for idx, img in enumerate(images):
             split = img.split if img.split in SPLIT_FOLDER else 'train'
             folder = SPLIT_FOLDER[split]
-            img_dst = root / folder / 'images' / img.filename
-            lbl_dst = root / folder / 'labels' / img.label_filename
+            stem = _unique_stem(img.stem, used_names[folder])
+            img_dst = root / folder / 'images' / f"{stem}{img.path.suffix}"
+            lbl_dst = root / folder / 'labels' / f"{stem}.txt"
 
             if cancel_check and cancel_check():
                 return False
@@ -49,23 +81,25 @@ def export_dataset(dataset: Dataset, export_path: str, copy_images: bool = True,
                 shutil.copy2(img.path, img_dst)
 
             metadata_path = identity_metadata_path(root, lbl_dst)
-            if not write_label_file(lbl_dst, img.annotations, metadata_path):
+            if not write_label_file(lbl_dst, _annotations_for_export(img), metadata_path):
                 return False
 
             if progress_callback:
                 progress_callback(idx + 1, total)
 
-        # Dataset yollarini guncelle (yaml icin)
-        dataset.root_path = root
-        dataset.train_images_path = root / 'train' / 'images'
-        dataset.val_images_path = root / 'valid' / 'images'
-        dataset.test_images_path = root / 'test' / 'images'
-        dataset.train_labels_path = root / 'train' / 'labels'
-        dataset.val_labels_path = root / 'valid' / 'labels'
-        dataset.test_labels_path = root / 'test' / 'labels'
-
-        # data.yaml yaz
-        write_data_yaml(root / 'data.yaml', dataset)
+        # data.yaml, export klasorunu gosteren bir KOPYA ile yazilir; acik
+        # dataset'in yollari degismez (sonraki kayitlar yerinde kalir).
+        exported = dataclasses.replace(
+            dataset,
+            root_path=root,
+            train_images_path=root / 'train' / 'images',
+            val_images_path=root / 'valid' / 'images',
+            test_images_path=root / 'test' / 'images',
+            train_labels_path=root / 'train' / 'labels',
+            val_labels_path=root / 'valid' / 'labels',
+            test_labels_path=root / 'test' / 'labels',
+        )
+        write_data_yaml(root / 'data.yaml', exported)
 
         return True
     except Exception as e:

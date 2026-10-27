@@ -2,7 +2,8 @@
 
 from PySide6.QtWidgets import (
     QDockWidget, QWidget, QVBoxLayout, QListWidget, QListWidgetItem,
-    QPushButton, QHBoxLayout, QInputDialog, QMenu, QColorDialog, QLabel
+    QPushButton, QHBoxLayout, QInputDialog, QMenu, QColorDialog, QLabel,
+    QMessageBox,
 )
 from PySide6.QtCore import Qt, Signal, QSize
 from PySide6.QtGui import QColor, QPixmap, QIcon
@@ -122,7 +123,23 @@ class ClassListPanel(QDockWidget):
     def _remove_class(self, cls: LabelClass):
         if not self._dataset:
             return
-        self._dataset.remove_class(cls.id)
+        usage = self._dataset.count_class_usage(cls.id)
+        later = self._dataset.class_count - cls.id - 1
+        details = [f"'{cls.name}' sınıfı silinecek."]
+        if usage:
+            details.append(f"Bu sınıfa ait {usage} etiket de silinecek.")
+        if later:
+            details.append(f"Sonraki {later} sınıfın numarası bir azalacak; "
+                           "etiketler buna göre güncellenir.")
+        answer = QMessageBox.question(
+            self, "Sınıfı Sil", "\n".join(details) + "\n\nDevam edilsin mi?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        # Etiketler de yeniden eşlenir; aksi halde üstteki sınıflar kayardı
+        self._dataset.remove_class_and_remap(cls.id)
         self.load_classes(self._dataset.classes)
         self.class_removed.emit(cls.id)
 

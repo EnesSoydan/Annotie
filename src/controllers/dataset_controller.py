@@ -1,6 +1,8 @@
 """Veriseti yukleme, kaydetme ve export yonetimi."""
 
+import shutil
 from pathlib import Path
+from typing import Optional
 from PySide6.QtCore import QObject, Signal
 
 from src.io.dataset_importer import import_dataset
@@ -182,6 +184,13 @@ class DatasetController(QObject):
                 self.load_image_at(i)
                 return
 
+    def on_classes_remapped(self):
+        """Sinif silinip etiket kimlikleri yeniden eslendikten sonra: degisen
+        (dirty) gorselleri hemen diske yazar ve acik gorselin canvas'ini tazeler."""
+        self.save_all()
+        if self._current_image is not None:
+            self._ann_ctrl.set_current_image(self._current_image)
+
     def save_current_image(self):
         """Mevcut gorselin etiketlerini kaydeder."""
         if self._current_image:
@@ -215,6 +224,70 @@ class DatasetController(QObject):
         """Gorsel split atamasini degistirir."""
         if image:
             image.split = split
+
+    def change_image_split(self, image, split: str) -> Optional[str]:
+        """Split'i degistirir ve dosyalari yeni split'in klasorlerine tasir.
+
+        YOLO klasor duzeninde split klasorden okunur: yalnizca image.split
+        degisirse etiket yeni klasore yazilir, eskisi yetim kalir ve gorsel
+        yeniden acilista eski split'e doner. Hata mesaji veya None dondurur.
+        """
+        ds = self._dataset
+        if not ds or image is None or image.split == split:
+            return None
+        image.load_pending_labels()
+
+        old_split = image.split
+        old_path = image.path
+        old_label = ds.get_label_path_for_image(image)
+        old_identity = ds.get_annotation_identity_path(old_label) if old_label else None
+
+        target_dir = {
+            "train": ds.train_images_path,
+            "val": ds.val_images_path,
+            "test": ds.test_images_path,
+        }.get(split)
+        new_path = old_path
+        if target_dir and not ds.is_temporary and old_path.parent != target_dir:
+            new_path = target_dir / old_path.name
+            if new_path.exists():
+                return f"Hedef klasörde aynı adlı görsel var:\n{new_path}"
+
+        try:
+            if new_path != old_path:
+                new_path.parent.mkdir(parents=True, exist_ok=True)
+                shutil.move(str(old_path), str(new_path))
+                ds.remove_image(str(old_path))
+                image.path = new_path
+                ds.add_image(image)
+            image.split = split
+            new_label = ds.get_label_path_for_image(image)
+            identity = ds.get_annotation_identity_path(new_label) if new_label else None
+            if new_label is None or not write_label_file(new_label, image.annotations, identity):
+                raise OSError(f"Etiket yazılamadı: {new_label}")
+        except OSError as exc:
+            # Geri al: gorseli eski yerine, split'i eski degerine dondur
+            image.split = old_split
+            if image.path != old_path:
+                try:
+                    shutil.move(str(image.path), str(old_path))
+                except OSError:
+                    pass
+                ds.remove_image(str(image.path))
+                image.path = old_path
+                ds.add_image(image)
+            return f"Split değiştirilemedi:\n{exc}"
+
+        image.mark_clean()
+        if old_label and old_label != new_label:
+            for stale in (old_label, old_identity):
+                try:
+                    if stale and stale.is_file():
+                        stale.unlink()
+                except OSError:
+                    pass
+        self.image_saved.emit(image)
+        return None
 
     def delete_image_from_disk(self, image):
         """Gorseli ve varsa etiket dosyasini diskten siler."""
@@ -253,6 +326,15 @@ class DatasetController(QObject):
                 if is_current:
                     self.load_image_at(old_index)
                 return False, f"Dosya okunamadı: {path}\n{exc}", None
+
+        # Kısa geri-al süresinden sonra da kurtarılabilsin: önce çöpe kopyala
+        try:
+            from src.io.trash import copy_to_trash
+            copy_to_trash(paths_to_delete)
+        except OSError as exc:
+            if is_current:
+                self.load_image_at(old_index)
+            return False, f"Dosya çöp kutusuna kopyalanamadı, silinmedi:\n{exc}", None
 
         deleted_files = 0
         for path in paths_to_delete:

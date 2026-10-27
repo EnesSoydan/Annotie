@@ -22,6 +22,29 @@ def _deterministic_uid(line_index: int, line: str) -> str:
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
 
 
+def _eight_value_line_type(
+    lines: List[str],
+    task_type: Optional[AnnotationType],
+    kpt_shape: Optional[Tuple[int, int]],
+) -> Optional[AnnotationType]:
+    """class + 8 sayilik satir hem OBB hem 4 koseli polygon olabilir.
+
+    Ayni dosyada baska polygon satirlari (6 veya 8'den fazla cift sayi) varsa
+    dosya segmentasyondur ve 8 sayilik satirlar da polygon okunur; yoksa tip
+    tespiti (OBB) gecerli kalir.
+    """
+    if task_type is not None:
+        return None
+    counts = {len(line.split()) - 1 for line in lines if line}
+    if 8 not in counts:
+        return None
+    if kpt_shape and 8 == 4 + kpt_shape[0] * kpt_shape[1]:
+        return None
+    if any(n % 2 == 0 and (n == 6 or n > 8) for n in counts):
+        return AnnotationType.POLYGON
+    return None
+
+
 def read_label_file(
     path: Path,
     task_type: Optional[AnnotationType] = None,
@@ -41,13 +64,18 @@ def read_label_file(
         print(f"Etiket dosyasi okunamadi {path}: {e}")
         return annotations
 
+    cleaned = [ln.strip().lstrip("\ufeff").replace(",", ".") for ln in lines]
+    eight_value_type = _eight_value_line_type(cleaned, task_type, kpt_shape)
+
     parsed: list[tuple[int, str, Annotation]] = []
-    for i, line in enumerate(lines):
-        line = line.strip().lstrip("\ufeff").replace(",", ".")
+    for i, line in enumerate(cleaned):
         if not line:
             continue
         try:
-            ann = parse_annotation_line(line, task_type, kpt_shape)
+            line_type = task_type
+            if line_type is None and len(line.split()) == 9:
+                line_type = eight_value_type
+            ann = parse_annotation_line(line, line_type, kpt_shape)
         except (ValueError, IndexError) as e:
             print(f"Gecersiz etiket satiri atlandi {path}:{i + 1}: {e}")
             continue

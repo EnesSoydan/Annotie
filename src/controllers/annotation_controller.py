@@ -202,11 +202,21 @@ class AnnotationController(QObject):
         img.load_dimensions()
         img_w, img_h = img.width, img.height
 
+        keypoints = list(keypoints)
+        kpt_dims = 3
+        kpt_shape = self._dataset.kpt_shape if self._dataset else None
+        if kpt_shape:
+            # YOLO pose her satirda tam k nokta ister; eksikleri gorunmez (0,0,0)
+            # doldur. Aksi halde 0 noktali pose yeniden acilista bbox'a donusur.
+            kpt_dims = kpt_shape[1] if kpt_shape[1] in (2, 3) else 3
+            keypoints = keypoints[:kpt_shape[0]]
+            keypoints += [(0.0, 0.0, 0)] * (kpt_shape[0] - len(keypoints))
         ann = KeypointsAnnotation(
             class_id=self._active_class_id,
             x_center=bbox_norm[0], y_center=bbox_norm[1],
             width=bbox_norm[2], height=bbox_norm[3],
-            keypoints=keypoints
+            keypoints=keypoints,
+            kpt_dims=kpt_dims,
         )
         cls = self._dataset.get_class_by_id(self._active_class_id) if self._dataset else None
         kp_names = cls.keypoint_names if cls else []
@@ -322,6 +332,10 @@ class AnnotationController(QObject):
 
     def _schedule_save(self, image):
         """Debounce ile anlik kaydetme planlar."""
+        pending = self._pending_save_image
+        if pending is not None and pending is not image:
+            # Tek bekleme yuvasi var; baska gorsele gecildiyse oncekini simdi yaz
+            self._save_image(pending)
         self._pending_save_image = image
         self._save_timer.start(INSTANT_SAVE_DEBOUNCE_MS)
 
@@ -331,10 +345,15 @@ class AnnotationController(QObject):
             self._pending_save_image = None
 
     def _save_image(self, image):
-        """Bir gorselin etiketlerini aninda yazar."""
+        """Bir gorselin etiketlerini aninda yazar.
+
+        Temiz isaretlemeyi yazici yapar ve yalnizca basarida: yazma basarisiz
+        olursa gorsel dirty kalir, otomatik kayit/kapanis uyarisi onu yakalar.
+        """
         if self._label_writer_fn:
             self._label_writer_fn(image)
-        image.mark_clean()
+        else:
+            image.mark_clean()
 
     def _notify_change(self):
         """Annotation listesi panelini gunceller."""

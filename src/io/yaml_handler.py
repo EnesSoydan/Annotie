@@ -34,10 +34,15 @@ def parse_class_names(data: Dict[str, Any]) -> list:
 
 
 def write_data_yaml(path: Path, dataset) -> bool:
-    """Dataset modelinden data.yaml yazar."""
+    """Dataset modelinden data.yaml yazar.
+
+    Mevcut dosyadaki bilinmeyen anahtarlar (flip_idx, kpt_names, download...)
+    korunur; yalnızca editörün yönettiği alanlar güncellenir.
+    """
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        data = {}
+        existing = read_data_yaml(path) if path.exists() else None
+        data = dict(existing) if existing else {}
 
         if dataset.root_path:
             data['path'] = str(dataset.root_path)
@@ -63,8 +68,10 @@ def write_data_yaml(path: Path, dataset) -> bool:
             except ValueError:
                 data['test'] = dataset.test_images_path.as_posix()
 
-        data['nc'] = dataset.class_count
-        data['names'] = {c.id: c.name for c in dataset.classes}
+        # Sınıflar okunamadıysa mevcut isimleri "nc: 0" ile ezme
+        if dataset.classes or not data.get('names'):
+            data['nc'] = dataset.class_count
+            data['names'] = {c.id: c.name for c in dataset.classes}
 
         if dataset.kpt_shape:
             data['kpt_shape'] = list(dataset.kpt_shape)

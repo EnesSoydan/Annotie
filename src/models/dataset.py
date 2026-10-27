@@ -59,10 +59,45 @@ class Dataset:
         return lc
 
     def remove_class(self, class_id: int):
+        """Yalnizca sinif listesini gunceller. Etiketleri de yeniden eslemek
+        icin remove_class_and_remap kullanin; aksi halde silinen sinifin
+        ustundeki tum etiketler bir alt sinifa kayar."""
         self.classes = [c for c in self.classes if c.id != class_id]
         # ID'leri yeniden sirala
         for i, c in enumerate(self.classes):
             c.id = i
+
+    def count_class_usage(self, class_id: int) -> int:
+        """Sinifin tum gorsellerdeki (lazy olanlar dahil) kullanim sayisi."""
+        total = 0
+        for img in self.images.values():
+            img.load_pending_labels()
+            total += sum(1 for a in img.annotations if a.class_id == class_id)
+        return total
+
+    def remove_class_and_remap(self, class_id: int) -> List[ImageItem]:
+        """Sinifi siler, o sinifin etiketlerini kaldirir ve ustteki sinif
+        kimliklerini bir azaltir. Degisen gorseller dirty isaretlenir ve
+        dondurulur; kalici olmasi icin cagiranin kaydetmesi gerekir."""
+        changed = []
+        for img in self.images.values():
+            img.load_pending_labels()
+            kept = []
+            modified = False
+            for ann in img.annotations:
+                if ann.class_id == class_id:
+                    modified = True
+                    continue
+                if ann.class_id > class_id:
+                    ann.class_id -= 1
+                    modified = True
+                kept.append(ann)
+            if modified:
+                img.annotations = kept
+                img.mark_dirty()
+                changed.append(img)
+        self.remove_class(class_id)
+        return changed
 
     def get_images_by_split(self, split: str) -> List[ImageItem]:
         return [img for img in self.images.values() if img.split == split]

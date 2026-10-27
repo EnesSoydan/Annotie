@@ -153,6 +153,9 @@ class MainWindow(QMainWindow):
             if label_path:
                 identity_path = self._dataset.get_annotation_identity_path(label_path)
                 if not write_label_file(label_path, image.annotations, identity_path):
+                    # Görsel dirty kalır; kullanıcı kaydın düşmediğini görsün
+                    self.status_bar.showMessage(
+                        f"Etiket kaydedilemedi: {label_path}", 8000)
                     return
                 image.mark_clean()
                 # Tüm kayıt yolları (anlık/otomatik/menü) DB write-through tetiklesin
@@ -315,6 +318,7 @@ class MainWindow(QMainWindow):
         self.image_list_panel.import_requested.connect(self._on_import_images_for_split)
         self.image_list_panel.tab_clicked.connect(self._on_split_tab_clicked)
         self.image_list_panel.image_delete_requested.connect(self._on_delete_image_requested)
+        self.image_list_panel.set_split_handler(self.ds_ctrl.change_image_split)
         self.class_panel.class_selected.connect(self.ann_ctrl.set_active_class)
         self.class_panel.class_changed.connect(self._on_class_changed)
         self.class_panel.class_added.connect(self._on_class_added_collab)
@@ -480,8 +484,12 @@ class MainWindow(QMainWindow):
     def _on_split_changed(self, split: str):
         current = self.ds_ctrl._current_image
         if current:
-            current.split = split
-            current.mark_dirty()
+            # Görsel + etiket yeni split klasörüne taşınır (yetim etiket kalmaz)
+            error = self.ds_ctrl.change_image_split(current, split)
+            if error:
+                QMessageBox.warning(self, "Split Değiştirilemedi", error)
+                self.toolbar.split_selector.set_split(current.split)
+                return
             self.image_list_panel.refresh_item(current)
 
     def _on_class_changed(self, cls):
@@ -892,6 +900,8 @@ class MainWindow(QMainWindow):
             self.collab_ctrl.send_class_add(cls.id, cls.name, color)
 
     def _on_class_removed_collab(self, class_id: int):
+        # Panel etiketleri yeniden eşledi; değişen görselleri yaz, canvas'ı tazele
+        self.ds_ctrl.on_classes_remapped()
         if self.collab_ctrl.is_in_lobby:
             self.collab_ctrl.send_class_delete(class_id)
 
