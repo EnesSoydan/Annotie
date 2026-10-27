@@ -7,31 +7,32 @@ from pathlib import Path
 # src klasorunu Python yoluna ekle
 sys.path.insert(0, str(Path(__file__).parent))
 
-# Konsol yoksa (EXE modunda) stdout/stderr'i None olmaktan koru
+# Konsol yoksa (EXE modunda) stdout/stderr'i None olmaktan koru. StringIO
+# degil devnull: StringIO her print'i bellekte biriktirip sinirsiz buyuyordu.
 if sys.stdout is None:
-    import io
-    sys.stdout = io.StringIO()
+    import os
+    sys.stdout = open(os.devnull, "w", encoding="utf-8")
 if sys.stderr is None:
-    import io
-    sys.stderr = io.StringIO()
+    import os
+    sys.stderr = open(os.devnull, "w", encoding="utf-8")
+
+from src.utils.logging_setup import setup_logging
+
+# Hata log dosyasinin konumu (~/.annotie/logs/annotie.log, donen dosya)
+_LOG_PATH = setup_logging()
 
 from src.app import create_application
 from src.widgets.main_window import MainWindow
 
+import logging
 
-# Hata log dosyasinin konumu
-_LOG_PATH = Path.home() / "Annotie_errors.log"
+_logger = logging.getLogger("annotie")
 _window_ready = False   # Pencere tam hazir olduktan sonra hata goster
 
 
 def _write_log(text: str):
-    """Hatay log dosyasina yazar."""
-    try:
-        with open(_LOG_PATH, "a", encoding="utf-8") as f:
-            from datetime import datetime
-            f.write(f"\n[{datetime.now():%Y-%m-%d %H:%M:%S}]\n{text}\n")
-    except Exception:
-        pass
+    """Hatayi log dosyasina yazar."""
+    _logger.error(text)
 
 
 def exception_hook(exc_type, exc_value, exc_tb):
