@@ -11,3 +11,9 @@ websockets>=12.0
 # Bulut / ekip sistemi (Faz 1+)
 supabase>=2.4.0
 httpx>=0.24.0   # presigned URL upload/download (supabase ile de gelir)
+
+# Otomatik etiketleme (kullanici modelleri)
+onnxruntime>=1.17.0
+opencv-python-headless>=4.8.0
+# Opsiyonel: .pt modellerini dogrudan calistirmak icin (torch ile ~2 GB)
+# ultralytics>=8.1

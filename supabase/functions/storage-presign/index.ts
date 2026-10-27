@@ -36,8 +36,15 @@ Deno.serve(async (req: Request) => {
   const datasetId: string = body.dataset_id;
   const contentHash: string = body.content_hash;
   const op: string = body.op; // "put" | "get"
+  const kind: string = body.kind ?? "image"; // "image" | "model"
   if (!contentHash || (op !== "put" && op !== "get")) {
     return json({ error: "content_hash ve op (put|get) gerekli" }, 400);
+  }
+  if (kind !== "image" && kind !== "model") {
+    return json({ error: "kind (image|model) geçersiz" }, 400);
+  }
+  if (!/^[0-9a-f]{64}$/.test(contentHash)) {
+    return json({ error: "content_hash sha256 hex olmalı" }, 400);
   }
 
   // --- Kullanıcı oturumu (RLS bu oturumla uygulanır) ---
@@ -55,7 +62,18 @@ Deno.serve(async (req: Request) => {
   if (userErr || !user) return json({ error: "Yetkisiz" }, 401);
 
   // --- Yetkilendirme ---
-  if (op === "put") {
+  if (kind === "model") {
+    // Kullanıcı modelleri: anahtar kullanıcının kendi önekinde. PUT her
+    // oturumlu kullanıcıya açık (kendi önekine); GET için kullanıcının bu
+    // hash'e sahip bir user_models satırı olmalı (RLS: owner_id = auth.uid()).
+    if (op === "get") {
+      const { data: mdl } = await supabase
+        .from("user_models").select("id").eq("content_hash", contentHash).limit(1);
+      if (!mdl || mdl.length === 0) {
+        return json({ error: "Modele erişim yok" }, 403);
+      }
+    }
+  } else if (op === "put") {
     if (!datasetId) return json({ error: "dataset_id gerekli (put)" }, 400);
     // Dataset görünür mü (üye mi) + yazma rolü var mı?
     const { data: ds } = await supabase
@@ -85,7 +103,9 @@ Deno.serve(async (req: Request) => {
     return json({ error: "Sunucu deposu yapılandırılmamış (R2 secret eksik)" }, 500);
   }
 
-  const key = `blobs/${contentHash}`; // içerik-adresli (dedup)
+  const key = kind === "model"
+    ? `models/${user.id}/${contentHash}`  // kullanıcıya özel
+    : `blobs/${contentHash}`;             // içerik-adresli (dedup)
   const endpoint = `https://${accountId}.r2.cloudflarestorage.com`;
   const url = new URL(`${endpoint}/${bucket}/${key}`);
   url.searchParams.set("X-Amz-Expires", String(EXPIRES));

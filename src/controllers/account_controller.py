@@ -64,6 +64,7 @@ class AccountController(QObject):
         self._cloud_sync_inflight = set()
         self._cloud_sync_pending = set()
         self._storage_client = None  # StorageClient (keep-alive havuzu)
+        self._autolabel_ctrl = None  # AutoLabelController (lazy)
         # Sınıf değişikliklerini DB'ye yazma (debounce)
         self._class_signals_connected = False
         self._class_persist_timer = QTimer(self)
@@ -119,6 +120,13 @@ class AccountController(QObject):
             teams = QAction("Ekiplerim...", self.mw)
             teams.triggered.connect(self._on_teams)
             self._menu.addAction(teams)
+            self._menu.addSeparator()
+            models = QAction("Modellerim...", self.mw)
+            models.triggered.connect(lambda: self._autolabel().open_models())
+            self._menu.addAction(models)
+            autolabel = QAction("Otomatik Etiketle...", self.mw)
+            autolabel.triggered.connect(lambda: self._autolabel().start())
+            self._menu.addAction(autolabel)
             self._menu.addSeparator()
             out = QAction("Çıkış Yap", self.mw)
             out.triggered.connect(self._on_logout)
@@ -586,6 +594,29 @@ class AccountController(QObject):
         self._refresh_menu()
         self.auth_changed.emit()
         self.mw.status_bar.showMessage("Çıkış yapıldı", 3000)
+
+    # ─── Otomatik etiketleme ───────────────────────────────────────────────
+    def _autolabel(self):
+        if self._autolabel_ctrl is None:
+            from src.controllers.autolabel_controller import AutoLabelController
+            self._autolabel_ctrl = AutoLabelController(self.mw, self)
+        return self._autolabel_ctrl
+
+    def is_cloud_dataset_active(self) -> bool:
+        return bool(self._cloud_active and self._cloud_dataset_id)
+
+    def cloud_storage_client(self):
+        """Acik ekip datasetinin StorageClient'i (yoksa None)."""
+        return self._storage_client if self.is_cloud_dataset_active() else None
+
+    def cloud_content_hash(self, image):
+        """Ekip datasetindeki gorselin R2 icerik-hash'i (yerel datasette None)."""
+        if not self.is_cloud_dataset_active():
+            return None
+        return self._cloud_hash.get(image.filename)
+
+    def cloud_sync_inflight(self) -> int:
+        return len(self._cloud_sync_inflight)
 
     # ─── Durum / yardimci ──────────────────────────────────────────────────
     @property

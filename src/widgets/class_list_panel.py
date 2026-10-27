@@ -92,9 +92,16 @@ class ClassListPanel(QDockWidget):
             return
         name, ok = QInputDialog.getText(self, "Sınıf Ekle", "Sınıf adı:")
         if ok and name.strip():
-            cls = self._dataset.add_class(name.strip())
-            self._add_list_item(cls)
-            self.class_added.emit(cls)
+            self.add_class_programmatic(name.strip())
+
+    def add_class_programmatic(self, name: str):
+        """Diyalogsuz sinif ekler (otomatik etiketleme vb.); class_added yayar."""
+        if not self._dataset:
+            return None
+        cls = self._dataset.add_class(name)
+        self._add_list_item(cls)
+        self.class_added.emit(cls)
+        return cls
 
     def _rename_class(self, cls: LabelClass, item: QListWidgetItem):
         name, ok = QInputDialog.getText(self, "Yeniden Adlandır", "Yeni ad:", text=cls.name)

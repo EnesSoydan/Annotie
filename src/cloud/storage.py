@@ -20,6 +20,8 @@ from src.cloud.supabase_client import get_client
 
 
 CACHE_DIR = Path.home() / ".annotie" / "cache" / "blobs"
+MODEL_CACHE_DIR = Path.home() / ".annotie" / "models"
+MAX_MODEL_BYTES = 500 * 1024 * 1024
 
 
 class StorageError(Exception):
@@ -65,7 +67,8 @@ class StorageClient:
             raise StorageError("Oturum yok (giriş gerekli).")
         return sess.access_token
 
-    def _presign(self, dataset_id: Optional[str], content_hash: str, op: str) -> dict:
+    def _presign(self, dataset_id: Optional[str], content_hash: str, op: str,
+                 kind: str = "image") -> dict:
         url = f"{self._cfg.url}/functions/v1/storage-presign"
         headers = {
             "Authorization": f"Bearer {self._access_token()}",
@@ -73,6 +76,8 @@ class StorageClient:
             "Content-Type": "application/json",
         }
         payload = {"content_hash": content_hash, "op": op}
+        if kind != "image":
+            payload["kind"] = kind
         if dataset_id:
             payload["dataset_id"] = dataset_id
         try:
@@ -127,6 +132,60 @@ class StorageClient:
         if resp.status_code != 200:
             raise StorageError(f"İndirme hatası ({resp.status_code}): {resp.text[:200]}")
         return self._write_cache(content_hash, resp.content)
+
+    # ─── Kullanıcı modelleri ───────────────────────────────────────────────
+    def upload_model_file(self, file_path, content_hash: Optional[str] = None) -> dict:
+        """Model dosyasını kullanıcının R2 önekine yükler (dosyadan akışla)."""
+        file_path = Path(file_path)
+        size = file_path.stat().st_size
+        if size > MAX_MODEL_BYTES:
+            raise StorageError(
+                f"Model dosyası çok büyük ({size // (1 << 20)} MB). "
+                f"Sınır: {MAX_MODEL_BYTES // (1 << 20)} MB."
+            )
+        content_hash = content_hash or sha256_file(file_path)
+        pre = self._presign(None, content_hash, "put", kind="model")
+        try:
+            with open(file_path, "rb") as f:
+                resp = self._http.put(
+                    pre["url"], content=f,
+                    headers={"Content-Length": str(size)},
+                    timeout=max(self._timeout, 600.0),
+                )
+        except httpx.HTTPError as exc:
+            raise StorageError(f"Model yükleme isteği başarısız: {exc}")
+        if resp.status_code not in (200, 201):
+            raise StorageError(f"Model yükleme hatası ({resp.status_code}): {resp.text[:200]}")
+        return {"content_hash": content_hash, "key": pre["key"], "size_bytes": size}
+
+    def download_model(self, content_hash: str, suffix: str) -> Path:
+        """Modeli yerel model cache'ine indirir (varsa tekrar indirmez)."""
+        MODEL_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        target = MODEL_CACHE_DIR / f"{content_hash}{suffix}"
+        if target.is_file():
+            return target
+        pre = self._presign(None, content_hash, "get", kind="model")
+        tmp = target.with_suffix(target.suffix + ".part")
+        try:
+            with self._http.stream("GET", pre["url"], timeout=max(self._timeout, 600.0)) as resp:
+                if resp.status_code != 200:
+                    raise StorageError(f"Model indirme hatası ({resp.status_code})")
+                h = hashlib.sha256()
+                with open(tmp, "wb") as f:
+                    for chunk in resp.iter_bytes(1 << 20):
+                        h.update(chunk)
+                        f.write(chunk)
+        except httpx.HTTPError as exc:
+            tmp.unlink(missing_ok=True)
+            raise StorageError(f"Model indirme isteği başarısız: {exc}")
+        except StorageError:
+            tmp.unlink(missing_ok=True)
+            raise
+        if h.hexdigest() != content_hash:
+            tmp.unlink(missing_ok=True)
+            raise StorageError("İndirilen model bozuk (hash uyuşmuyor).")
+        tmp.replace(target)
+        return target
 
     # ─── Yardımcılar ───────────────────────────────────────────────────────
     @staticmethod
