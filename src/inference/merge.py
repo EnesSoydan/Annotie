@@ -8,7 +8,7 @@ from __future__ import annotations
 import copy
 import uuid
 from dataclasses import dataclass
-from typing import Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
 from src.models.annotation import (
     Annotation, AnnotationType, BBoxAnnotation, KeypointsAnnotation,
@@ -88,8 +88,15 @@ def resolve_mapping(mapping: Dict[int, ClassTarget],
 
 
 # ─── Gorev uyumu ───────────────────────────────────────────────────────────
-def can_convert(model_task: AnnotationType, dataset_task: Optional[AnnotationType]) -> bool:
+def can_convert(model_task: AnnotationType, dataset_task: Optional[AnnotationType],
+                model_kpt_shape=None, dataset_kpt_shape=None) -> bool:
     if dataset_task is None or dataset_task == model_task:
+        # Pose: nokta sayisi/boyutu farkli bir model dataset'e gecersiz satir yazar
+        # (ör. 17 noktali COCO modeli 5 noktali dataset'e).
+        if (model_task == AnnotationType.KEYPOINTS and model_kpt_shape
+                and dataset_kpt_shape
+                and tuple(model_kpt_shape)[0] != tuple(dataset_kpt_shape)[0]):
+            return False
         return True
     return dataset_task == AnnotationType.BBOX and model_task in (
         AnnotationType.POLYGON, AnnotationType.OBB, AnnotationType.KEYPOINTS)
@@ -136,24 +143,67 @@ MODE_UNLABELED_ONLY = "unlabeled_only"
 MODE_REPLACE = "replace"
 
 
+# "Ekle" modunda ayni sinifta bu kadar ortusen tahmin mevcut etiketin kopyasi sayilir
+APPEND_DEDUPE_IOU = 0.5
+
+
+def _bbox_iou(a: BBoxAnnotation, b: BBoxAnnotation) -> float:
+    ax1, ay1 = a.x_center - a.width / 2, a.y_center - a.height / 2
+    ax2, ay2 = a.x_center + a.width / 2, a.y_center + a.height / 2
+    bx1, by1 = b.x_center - b.width / 2, b.y_center - b.height / 2
+    bx2, by2 = b.x_center + b.width / 2, b.y_center + b.height / 2
+    iw = max(0.0, min(ax2, bx2) - max(ax1, bx1))
+    ih = max(0.0, min(ay2, by2) - max(ay1, by1))
+    inter = iw * ih
+    union = a.width * a.height + b.width * b.height - inter
+    return inter / union if union > 0 else 0.0
+
+
+def _duplicates_existing(ann: Annotation, existing: List[Annotation], thr: float) -> bool:
+    box = _to_bbox(ann)
+    if box is None:
+        return False
+    for other in existing:
+        if other.class_id != ann.class_id or other.ann_type == AnnotationType.CLASSIFICATION:
+            continue
+        other_box = _to_bbox(other)
+        if other_box is not None and _bbox_iou(box, other_box) >= thr:
+            return True
+    return False
+
+
 def merge_annotations(existing: List[Annotation], new: List[Annotation],
-                      mode: str) -> Optional[List[Annotation]]:
+                      mode: str, replace_classes: Optional[Set[int]] = None,
+                      dedupe_iou: float = APPEND_DEDUPE_IOU) -> Optional[List[Annotation]]:
     """Yeni etiket listesini dondurur; None = gorsele dokunulmamali.
 
     Tahmini olmayan gorsellere hicbir modda dokunulmaz ("degistir" modu da
     modelin bir sey bulamadigi gorseldeki elle girilmis etiketleri silmez).
+    replace_classes verilirse "degistir" yalnizca bu (modelin uretebildigi)
+    siniflardaki mevcut etiketleri siler; digerleri korunur.
     """
     if not new:
         return None
     if mode == MODE_REPLACE:
-        return list(new)
+        if replace_classes is None:
+            return list(new)
+        kept = [a for a in existing if a.class_id not in replace_classes]
+        return kept + list(new)
     if mode == MODE_UNLABELED_ONLY:
         return None if existing else list(new)
     # APPEND — siniflandirmada ayni sinif tekrar eklenmez, farkli sinif da
     # mevcut siniflandirmanin yanina eklenmez (gorsel basina tek sinif).
+    # Mevcut bir etiketle ayni sinifta buyuk olcude ortusen tahminler de
+    # eklenmez: otomatik etiketlemeyi tekrar calistirmak kutulari cogaltmasin.
     has_cls = any(a.ann_type == AnnotationType.CLASSIFICATION for a in existing)
-    to_add = [a for a in new
-              if not (a.ann_type == AnnotationType.CLASSIFICATION and has_cls)]
+    to_add = []
+    for a in new:
+        if a.ann_type == AnnotationType.CLASSIFICATION:
+            if has_cls:
+                continue
+        elif _duplicates_existing(a, list(existing) + to_add, dedupe_iou):
+            continue
+        to_add.append(a)
     if not to_add:
         return None
     return list(existing) + to_add

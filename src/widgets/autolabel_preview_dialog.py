@@ -395,6 +395,10 @@ class AutoLabelPreviewDialog(QDialog):
         self._refresh_timer.start(120)
 
     # ─── Kabul / Red ───────────────────────────────────────────────────────
+    def target_class_ids(self) -> set:
+        """Modelin eşlendiği dataset sınıfları ("değiştir" yalnızca bunlara dokunur)."""
+        return set(self._id_map.values())
+
     def predictions_for(self, key: str) -> list:
         return [a for a, _s in self._final_for(key)]
 
@@ -406,7 +410,8 @@ class AutoLabelPreviewDialog(QDialog):
                 image = self._by_key[key]
                 image.load_pending_labels()
                 new = self.predictions_for(key)
-                merged = merge_annotations(image.annotations, new, mode)
+                merged = merge_annotations(image.annotations, new, mode,
+                                           replace_classes=self.target_class_ids())
                 if merged is not None:
                     imgs += 1
                     anns += len(merged) - (len(image.annotations) if mode == MODE_APPEND else 0)

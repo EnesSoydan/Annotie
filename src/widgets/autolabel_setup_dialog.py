@@ -54,7 +54,8 @@ class AutoLabelSetupDialog(QDialog):
         self.iou_spin = QDoubleSpinBox()
         self.iou_spin.setRange(0.1, 0.95)
         self.iou_spin.setSingleStep(0.05)
-        self.iou_spin.setValue(0.45)
+        # Ultralytics predict varsayılanı; farklı değer `yolo predict` ile uyuşmaz
+        self.iou_spin.setValue(0.7)
         form.addRow("IoU (NMS):", self.iou_spin)
 
         self.scope_combo = QComboBox()
@@ -121,8 +122,13 @@ class AutoLabelSetupDialog(QDialog):
             f"{task_label(m.get('task_type'))} · {len(names)} sınıf"
             + (f"\n{m['description']}" if m.get("description") else ""))
         ds_task = self._dataset.task_type
-        ok = task is not None and can_convert(task, ds_task)
-        if not ok:
+        ok = task is not None and can_convert(
+            task, ds_task, m.get("kpt_shape"), self._dataset.kpt_shape)
+        if not ok and task == AnnotationType.KEYPOINTS and ds_task in (None, task):
+            self.task_warning.setText(
+                f"Modelin keypoint sayısı ({(m.get('kpt_shape') or ['?'])[0]}) dataset'inkiyle "
+                f"({self._dataset.kpt_shape[0]}) uyuşmuyor.")
+        elif not ok:
             self.task_warning.setText(
                 f"Bu model ({task_label(m.get('task_type'))}) bu dataset'in görev tipiyle "
                 f"({task_label(ds_task.value if ds_task else None)}) uyumlu değil.")

@@ -86,6 +86,35 @@ class MergeTests(unittest.TestCase):
         existing = [ClassificationAnnotation(0)]
         self.assertIsNone(merge_annotations(existing, [ClassificationAnnotation(1)], MODE_APPEND))
 
+    def test_append_skips_duplicates_of_existing_boxes(self):
+        existing = [BBoxAnnotation(0, 0.5, 0.5, 0.2, 0.2)]
+        rerun = [BBoxAnnotation(0, 0.51, 0.5, 0.2, 0.2),   # aynı nesne
+                 BBoxAnnotation(1, 0.51, 0.5, 0.2, 0.2),   # başka sınıf
+                 BBoxAnnotation(0, 0.1, 0.1, 0.1, 0.1)]    # yeni nesne
+        out = merge_annotations(existing, rerun, MODE_APPEND)
+        self.assertEqual(len(out), 3)
+        self.assertIsNone(merge_annotations(existing, rerun[:1], MODE_APPEND))
+
+    def test_replace_only_touches_model_classes(self):
+        existing = [box(0), box(5)]
+        out = merge_annotations(existing, [box(0)], MODE_REPLACE, replace_classes={0, 1})
+        self.assertEqual(sorted(a.class_id for a in out), [0, 5])
+
+    def test_pose_keypoint_count_must_match(self):
+        kp = AnnotationType.KEYPOINTS
+        self.assertFalse(can_convert(kp, kp, [17, 3], (5, 3)))
+        self.assertTrue(can_convert(kp, kp, [17, 3], (17, 2)))
+        self.assertTrue(can_convert(kp, None, [17, 3], None))
+
+
+class OnnxOutputLayoutTests(unittest.TestCase):
+    def test_end2end_detected_from_shape(self):
+        from src.inference.onnx_predictor import looks_end2end
+        self.assertFalse(looks_end2end((1, 84, 8400)))
+        self.assertTrue(looks_end2end((1, 300, 6)))
+        self.assertTrue(looks_end2end((1, 300, 38)))
+        self.assertFalse(looks_end2end((1, "boxes", "anchors")))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -139,7 +139,8 @@ class AutoLabelController(QObject):
                 continue
             image.load_pending_labels()
             new = preview.predictions_for(key)
-            merged = merge_annotations(image.annotations, new, mode)
+            merged = merge_annotations(image.annotations, new, mode,
+                                       replace_classes=preview.target_class_ids())
             if merged is None:
                 continue
             planned.append((image, merged))

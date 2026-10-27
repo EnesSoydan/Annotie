@@ -71,6 +71,8 @@ def _meta_from_session(session) -> Tuple[ModelMeta, bool]:
     kpt_shape = (int(kpt[0]), int(kpt[1])) if isinstance(kpt, (list, tuple)) and len(kpt) == 2 else None
 
     end2end = str(md.get("end2end", "")).lower() == "true"
+    if not end2end and task != AnnotationType.CLASSIFICATION:
+        end2end = looks_end2end(outputs[0].shape)
     if not class_names:
         shape = outputs[0].shape
         nc = None
@@ -87,6 +89,17 @@ def _meta_from_session(session) -> Tuple[ModelMeta, bool]:
     return ModelMeta("onnx", task, class_names, imgsz, kpt_shape), end2end
 
 
+def looks_end2end(shape) -> bool:
+    """Cikti sekli NMS'li/end-to-end mi? Klasik YOLO cikisi (1, 4+nc, anchors)
+    seklindedir ve anchor sayisi kanaldan buyuktur; nms=True ya da YOLO26/v10
+    export'u ise (1, max_det, 6+...) verir. 'end2end' metadata'si olmayan
+    nms=True export'lari boylece yanlis cozulmez."""
+    if len(shape) != 3:
+        return False
+    rows, cols = shape[1], shape[2]
+    return isinstance(rows, int) and isinstance(cols, int) and rows > cols
+
+
 def read_onnx_meta(path: Path) -> ModelMeta:
     return _meta_from_session(_open_session(path))[0]
 
@@ -97,6 +110,12 @@ class OnnxPredictor(Predictor):
         self.meta, self._end2end = _meta_from_session(self._session)
         inp = self._session.get_inputs()[0]
         self._input_name = inp.name
+        # half=True export'lari float16 girdi ister; float32 tensor ORT tip hatasi verir
+        self._input_dtype = np.float16 if "float16" in str(inp.type) else np.float32
+        batch = inp.shape[0] if inp.shape else 1
+        if isinstance(batch, int) and batch > 1:
+            raise InferenceError(
+                f"Model sabit batch={batch} ile export edilmiş; batch=1 veya dinamik export edin.")
         h, w = (inp.shape[2], inp.shape[3]) if len(inp.shape) == 4 else (None, None)
         default = self.meta.imgsz or (224 if self.meta.task_type == AnnotationType.CLASSIFICATION else 640)
         self._in_h = h if isinstance(h, int) else default
@@ -108,12 +127,14 @@ class OnnxPredictor(Predictor):
                 iou: float = 0.45) -> List[Prediction]:
         img = load_rgb(Path(image_path))
         if self.meta.task_type == AnnotationType.CLASSIFICATION:
-            x = decode.to_tensor(self._center_crop(img))
+            x = decode.to_tensor(self._center_crop(img)).astype(self._input_dtype)
             out = self._session.run(None, {self._input_name: x})
-            return decode.decode_classification(out[0], conf)
+            return decode.decode_classification(np.asarray(out[0], dtype=np.float32), conf)
 
         padded, lb = decode.letterbox(img, self._in_w, self._in_h)
-        outs = self._session.run(None, {self._input_name: decode.to_tensor(padded)})
+        x = decode.to_tensor(padded).astype(self._input_dtype)
+        outs = [np.asarray(o, dtype=np.float32)
+                for o in self._session.run(None, {self._input_name: x})]
         protos = next((o for o in outs[1:] if np.asarray(o).ndim == 4), None)
         return decode.decode_detections(
             outs[0], self.meta.task_type, len(self.meta.class_names), lb, conf, iou,
@@ -125,9 +146,11 @@ class OnnxPredictor(Predictor):
         """Ultralytics classify_transforms: kisa kenari boyuta getir + ortadan kirp."""
         import cv2
         h, w = img.shape[:2]
-        size = min(self._in_h, self._in_w)
-        r = size / min(h, w)
-        img = cv2.resize(img, (max(size, int(round(w * r))), max(size, int(round(h * r)))),
+        # Kare girdide kisa kenar = boyut (Ultralytics ile ayni); kare olmayan
+        # girdide de kirpma her iki kenari kaplasin diye buyuk orani kullan.
+        r = max(self._in_h / h, self._in_w / w)
+        img = cv2.resize(img, (max(self._in_w, int(round(w * r))),
+                               max(self._in_h, int(round(h * r)))),
                          interpolation=cv2.INTER_LINEAR)
         h, w = img.shape[:2]
         top, left = (h - self._in_h) // 2, (w - self._in_w) // 2
