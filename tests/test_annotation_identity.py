@@ -136,9 +136,13 @@ class AnnotationIdentityTests(unittest.TestCase):
         self.assertFalse(self.identity_path.exists())
 
     def test_metadata_path_stays_under_dataset_annotie_directory(self):
+        # identity_metadata_path yolu resolve() eder; Windows'ta geçici klasör
+        # 8.3 kısa adla (C:/Users/RUNNER~1/...) gelebildiği için beklenen yol da
+        # resolve edilerek karşılaştırılır.
         self.assertEqual(
             self.identity_path,
-            self.root / ".annotie" / "annotation_ids" / "labels" / "train" / "frame.txt.json",
+            self.root.resolve() / ".annotie" / "annotation_ids" / "labels" / "train"
+            / "frame.txt.json",
         )
 
 
