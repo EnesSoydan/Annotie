@@ -146,7 +146,9 @@ class MainWindow(QMainWindow):
         # Hesap (opsiyonel giris/kayit) kontrolcusu — Faz 2
         self.account_ctrl = AccountController(self)
 
-    def _write_image_labels(self, image):
+    def _write_image_labels(self, image, sync: bool = True):
+        """Etiketleri diske yazar. sync=False: yalnızca yerel (relay'den gelen
+        değişiklik); DB write-through tetiklenmez."""
         if self._dataset:
             from src.io.label_writer import write_label_file
             label_path = self._dataset.get_label_path_for_image(image)
@@ -158,6 +160,8 @@ class MainWindow(QMainWindow):
                         f"Etiket kaydedilemedi: {label_path}", 8000)
                     return
                 image.mark_clean()
+                if not sync:
+                    return
                 # Tüm kayıt yolları (anlık/otomatik/menü) DB write-through tetiklesin
                 # (ekip dataseti aktifse account_ctrl bunu DB'ye gönderir)
                 try:

@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import time
+import uuid
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterable, Optional
 
@@ -157,10 +160,35 @@ def parse_legacy_label_content(
     return payloads
 
 
+def _record_payload(row: dict) -> dict:
+    return {
+        "uid": str(row["uid"]),
+        "class_index": row["class_index"],
+        "type": row["type"],
+        "data": row.get("data") or {},
+    }
+
+
+def _is_tombstone(current: Optional[dict]) -> bool:
+    return bool(current and current.get("is_deleted"))
+
+
+@dataclass
+class SyncResult:
+    records: list[dict]
+    # Tombstone cakismasi nedeniyle yeni uid ile olusturulanlar: eski -> yeni
+    renamed: dict[str, str] = field(default_factory=dict)
+    rebased: bool = False
+
+
 class AnnotationService:
+    # Gecici ag hatalarinda RPC yeniden denemesi (saniye)
+    RETRY_DELAYS = (0.5, 1.5)
+
     def __init__(self, user_id: str, client=None):
         self._client = client or get_client()
         self._uid = user_id
+        self._sleep = time.sleep
 
     @staticmethod
     def group_by_image(records: Iterable[dict]) -> dict[str, list[dict]]:
@@ -169,7 +197,10 @@ class AnnotationService:
             grouped.setdefault(str(record["image_id"]), []).append(record)
         return grouped
 
-    def list_for_images(self, image_ids: Iterable[str], chunk: int = 100) -> list[dict]:
+    def list_for_images(self, image_ids: Iterable[str], chunk: int = 100,
+                        page_size: int = 1000) -> list[dict]:
+        """Gorsellerin silinmemis satirlari. PostgREST yanitlari max_rows (varsayilan
+        1000) ile kesildiginden her parti sayfa sayfa okunur."""
         ids = [str(image_id) for image_id in image_ids]
         records: list[dict] = []
         try:
@@ -177,16 +208,24 @@ class AnnotationService:
                 batch = ids[start:start + chunk]
                 if not batch:
                     continue
-                result = (
-                    self._client.table("annotations")
-                    .select("*")
-                    .in_("image_id", batch)
-                    .eq("is_deleted", False)
-                    .order("image_id")
-                    .order("created_at")
-                    .execute()
-                )
-                records.extend(result.data or [])
+                offset = 0
+                while True:
+                    result = (
+                        self._client.table("annotations")
+                        .select("*")
+                        .in_("image_id", batch)
+                        .eq("is_deleted", False)
+                        .order("image_id")
+                        .order("created_at")
+                        .order("id")
+                        .range(offset, offset + page_size - 1)
+                        .execute()
+                    )
+                    rows = result.data or []
+                    records.extend(rows)
+                    if len(rows) < page_size:
+                        break
+                    offset += page_size
         except Exception as exc:
             raise AnnotationError(f"Annotation satirlari alinamadi: {exc}") from exc
         return records
@@ -252,48 +291,123 @@ class AnnotationService:
         known_records: Iterable[dict],
     ) -> list[dict]:
         """Yerel goruntuyu nesne islemlerine ayirip version kontrollu kaydeder."""
-        current = {ann.uid: ann for ann in annotations}
-        known = {str(row["uid"]): dict(row) for row in known_records}
+        return self.sync_image_detailed(
+            dataset_id, image_id, annotations, known_records).records
 
-        for uid in sorted(set(known) - set(current)):
+    def sync_image_detailed(
+        self,
+        dataset_id: str,
+        image_id: str,
+        annotations: Iterable[Annotation],
+        known_records: Iterable[dict],
+        *,
+        refresh_first: bool = False,
+        max_rebases: int = 2,
+    ) -> "SyncResult":
+        """Yerel degisiklikleri, baskalarinin degisikliklerini ezmeden kaydeder.
+
+        known_records son bilinen DB durumudur (taban). Yalnizca yerelde tabana
+        gore degisen nesneler gonderilir. Bir islem version conflict verirse
+        gorselin guncel satirlari yeniden cekilir ve plan onlara gore tekrar
+        kurulur (uc yonlu birlestirme: taban / yerel / uzak); boylece eski bir
+        tabanla calisan istemci (ör. relay'den duzenleme almis bir alici) kalici
+        conflict'e dusmez. refresh_first ilk denemeden once tazeler.
+        """
+        annotations = list(annotations)
+        base = {str(row["uid"]): dict(row) for row in known_records}
+        remote = self._fetch_image_rows(image_id) if refresh_first else dict(base)
+        renamed: dict[str, str] = {}
+        rebased = refresh_first
+        attempts = 0
+        while True:
+            try:
+                records = self._push_changes(
+                    dataset_id, image_id, annotations, base, remote, renamed)
+                break
+            except AnnotationConflict:
+                attempts += 1
+                if attempts > max_rebases:
+                    raise
+                remote = self._fetch_image_rows(image_id)
+                rebased = True
+        if rebased:
+            # Yeniden temellenince baskalarinin satirlari da yeni taban olur
+            records = list(self._fetch_image_rows(image_id).values())
+        records.sort(key=lambda row: (row.get("created_at") or "", str(row["uid"])))
+        return SyncResult(records=records, renamed=renamed, rebased=rebased)
+
+    def _fetch_image_rows(self, image_id: str) -> dict[str, dict]:
+        return {str(row["uid"]): dict(row) for row in self.list_for_images([image_id])}
+
+    def _push_changes(
+        self,
+        dataset_id: str,
+        image_id: str,
+        annotations: list,
+        base: dict[str, dict],
+        remote: dict[str, dict],
+        renamed: dict[str, str],
+    ) -> list[dict]:
+        state = {uid: dict(row) for uid, row in remote.items()}
+        local = {renamed.get(ann.uid, ann.uid): ann for ann in annotations}
+
+        # Yerelde silinenler (tabanda var, yerelde yok); uzakta zaten yoksa atla
+        for uid in sorted(set(base) - set(local)):
+            remote_row = state.get(uid)
+            if remote_row is None:
+                continue
             self._apply_operation(
-                dataset_id, image_id, uid, "delete",
-                int(known[uid]["version"]), None,
+                dataset_id, image_id, uid, "delete", int(remote_row["version"]), None,
             )
-            known.pop(uid, None)
+            state.pop(uid, None)
 
-        for uid, annotation in current.items():
+        for uid, annotation in local.items():
             payload = annotation_to_cloud_payload(annotation)
-            previous = known.get(uid)
-            if previous is None:
-                operation = "create"
-                base_version = 0
-            else:
-                previous_payload = {
-                    "uid": previous["uid"],
-                    "class_index": previous["class_index"],
-                    "type": previous["type"],
-                    "data": previous.get("data") or {},
-                }
-                if payload == previous_payload:
-                    annotation.version = int(previous["version"])
+            payload["uid"] = uid
+            base_row = base.get(uid)
+            remote_row = state.get(uid)
+            if base_row is not None and payload == _record_payload(base_row):
+                # Yerelde degismedi: uzaktaki (belki baskasinin) durumu gecerli
+                if remote_row is not None:
+                    annotation.version = int(remote_row["version"])
+                continue
+
+            if remote_row is not None:
+                remote_payload = _record_payload(remote_row)
+                if payload == remote_payload:
+                    annotation.version = int(remote_row["version"])
                     continue
                 only_class_changed = (
-                    payload["type"] == previous_payload["type"]
-                    and payload["data"] == previous_payload["data"]
-                    and payload["class_index"] != previous_payload["class_index"]
+                    payload["type"] == remote_payload["type"]
+                    and payload["data"] == remote_payload["data"]
+                    and payload["class_index"] != remote_payload["class_index"]
                 )
                 operation = "class_change" if only_class_changed else "modify"
-                base_version = int(previous["version"])
+                row = self._apply_operation(
+                    dataset_id, image_id, uid, operation,
+                    int(remote_row["version"]), payload,
+                )
+            else:
+                try:
+                    row = self._apply_operation(
+                        dataset_id, image_id, uid, "create", 0, payload)
+                except AnnotationConflict as exc:
+                    if not _is_tombstone(exc.current):
+                        raise
+                    # Silinmis (tombstone) uid yeniden olusturulamaz: ör. silme
+                    # geri alindi. Ayni nesneyi yeni bir uid ile olustur.
+                    new_uid = str(uuid.uuid4())
+                    renamed[annotation.uid] = new_uid
+                    uid = new_uid
+                    payload["uid"] = new_uid
+                    row = self._apply_operation(
+                        dataset_id, image_id, uid, "create", 0, payload)
 
-            row = self._apply_operation(
-                dataset_id, image_id, uid, operation, base_version, payload,
-            )
             row["image_id"] = image_id
-            known[uid] = row
+            state[uid] = row
             annotation.version = int(row["version"])
 
-        return sorted(known.values(), key=lambda row: (row.get("created_at") or "", row["uid"]))
+        return list(state.values())
 
     def _apply_operation(
         self,
@@ -304,20 +418,26 @@ class AnnotationService:
         base_version: int,
         payload: Optional[dict],
     ) -> dict:
-        import uuid
-
-        try:
-            result = self._client.rpc("apply_annotation_operation", {
-                "p_dataset_id": dataset_id,
-                "p_image_id": image_id,
-                "p_client_op_id": str(uuid.uuid4()),
-                "p_annotation_uid": annotation_uid,
-                "p_operation": operation,
-                "p_base_version": base_version,
-                "p_annotation": payload,
-            }).execute()
-        except Exception as exc:
-            raise AnnotationError(f"Annotation islemi kaydedilemedi: {exc}") from exc
+        # Ayni client_op_id ile yeniden deneme idempotenttir: yanit kaybolsa
+        # bile sunucu ilk sonucu dondurur, islem iki kez uygulanmaz.
+        params = {
+            "p_dataset_id": dataset_id,
+            "p_image_id": image_id,
+            "p_client_op_id": str(uuid.uuid4()),
+            "p_annotation_uid": annotation_uid,
+            "p_operation": operation,
+            "p_base_version": base_version,
+            "p_annotation": payload,
+        }
+        delays = self.RETRY_DELAYS
+        for attempt in range(len(delays) + 1):
+            try:
+                result = self._client.rpc("apply_annotation_operation", params).execute()
+                break
+            except Exception as exc:
+                if attempt >= len(delays):
+                    raise AnnotationError(f"Annotation islemi kaydedilemedi: {exc}") from exc
+                self._sleep(delays[attempt])
 
         data = result.data or []
         row = data[0] if isinstance(data, list) and data else data

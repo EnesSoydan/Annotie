@@ -48,12 +48,17 @@ class _AnnotationQuery:
     def order(self, _field):
         return self
 
+    def range(self, start, end):
+        self._range = (start, end)
+        return self
+
     def execute(self):
         rows = [
             row for row in self._records
             if self._image_ids is None or str(row["image_id"]) in self._image_ids
         ]
-        return _Response(rows)
+        start, end = getattr(self, "_range", (0, len(rows)))
+        return _Response(rows[start:end + 1])
 
 
 class _FakeClient:

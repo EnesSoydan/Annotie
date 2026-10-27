@@ -16,6 +16,28 @@ class AuthError(Exception):
     """Kimlik dogrulama hatasi (kullaniciya gosterilebilir mesaj)."""
 
 
+_NETWORK_HINTS = ("connect", "timeout", "timed out", "network", "name resolution",
+                  "getaddrinfo", "unreachable", "retryable")
+
+
+def is_network_error(exc: BaseException) -> bool:
+    """Hata ag/baglanti kaynakli mi (token reddi degil)?"""
+    seen = set()
+    current: Optional[BaseException] = exc
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        if isinstance(current, (ConnectionError, TimeoutError, OSError)):
+            return True
+        name = type(current).__name__.lower()
+        if any(hint in name for hint in _NETWORK_HINTS):
+            return True
+        if any(hint in str(current).lower() for hint in ("connection", "timed out",
+                                                           "getaddrinfo", "name resolution")):
+            return True
+        current = current.__cause__ or current.__context__
+    return False
+
+
 @dataclass
 class AuthUser:
     id: str
@@ -31,6 +53,19 @@ class AuthManager:
         self._client = client or get_client()
         self._store = token_store or TokenStore()
         self._user: Optional[AuthUser] = None
+        # Supabase refresh token'i her yenilemede degisir (rotation). Yenisi
+        # diske yazilmazsa bir sonraki acilis iptal edilmis token'la denenir
+        # ve kullanici sessizce cikis yapmis olur.
+        try:
+            self._client.auth.on_auth_state_change(self._on_auth_event)
+        except Exception:
+            pass
+
+    def _on_auth_event(self, event, session) -> None:
+        name = str(getattr(event, "value", event)).upper()
+        if session is not None and ("TOKEN_REFRESHED" in name or "SIGNED_IN" in name):
+            if self._user is not None:
+                self._persist_session(session)
 
     # --- Durum ---
     @property
@@ -95,8 +130,11 @@ class AuthManager:
                 data["access_token"], data["refresh_token"]
             )
             user_resp = self._client.auth.get_user()
-        except Exception:
-            self._store.clear()
+        except Exception as exc:
+            # Cevrimdisi acilis oturumu silmemeli; yalnizca sunucu token'i
+            # reddederse (gecersiz/iptal) kayitli oturum temizlenir.
+            if not is_network_error(exc):
+                self._store.clear()
             return None
 
         user = getattr(user_resp, "user", None)

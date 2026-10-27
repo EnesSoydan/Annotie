@@ -63,6 +63,7 @@ class AccountController(QObject):
         self._cloud_annotation_records = {}  # image_id → canonical DB satirlari
         self._cloud_sync_inflight = set()
         self._cloud_sync_pending = set()
+        self._cloud_stale_images = set()  # bilinen satırları eski olan image_id'ler
         self._storage_client = None  # StorageClient (keep-alive havuzu)
         self._autolabel_ctrl = None  # AutoLabelController (lazy)
         # Sınıf değişikliklerini DB'ye yazma (debounce)
@@ -438,14 +439,20 @@ class AccountController(QObject):
         import copy
         snapshot = copy.deepcopy(image.annotations)
         known = copy.deepcopy(self._cloud_annotation_records.get(image_id, []))
+        refresh_first = image_id in self._cloud_stale_images
+        self._cloud_stale_images.discard(image_id)
         annotation_service = self._ann_svc
         self._cloud_sync_inflight.add(image_id)
         worker = _AuthWorker(
             lambda svc=annotation_service, did=self._cloud_dataset_id,
-                   iid=image_id, anns=snapshot, rows=known:
-                svc.sync_image(did, iid, anns, rows), self)
+                   iid=image_id, anns=snapshot, rows=known, refresh=refresh_first:
+                svc.sync_image_detailed(did, iid, anns, rows, refresh_first=refresh),
+            self)
 
-        def on_done(records, iid=image_id, current_image=image):
+        def on_done(result, iid=image_id, current_image=image):
+            records = result.records
+            if result.renamed:
+                self._apply_uid_renames(current_image, result.renamed)
             self._cloud_annotation_records[iid] = records
             versions = {str(row["uid"]): int(row["version"]) for row in records}
             for annotation in current_image.annotations:
@@ -476,6 +483,8 @@ class AccountController(QObject):
         def on_failed(message, iid=image_id):
             self._cloud_sync_inflight.discard(iid)
             self._cloud_sync_pending.discard(iid)
+            # Taban artık güvenilmez: sonraki kayıt önce DB'den tazelesin
+            self._cloud_stale_images.add(iid)
             self.mw.status_bar.showMessage(
                 f"Annotation satırları kaydedilemedi: {message}", 7000
             )
@@ -484,6 +493,29 @@ class AccountController(QObject):
         worker.failed.connect(on_failed)
         self._track(worker)
         worker.start()
+
+    def mark_cloud_image_stale(self, image):
+        """Görsel başkasının değişikliğiyle (relay) güncellendi: bilinen DB
+        satırları eski; bir sonraki senkron önce güncel satırları çeker."""
+        image_id = self._cloud_map.get(getattr(image, "filename", None))
+        if image_id:
+            self._cloud_stale_images.add(image_id)
+
+    def mark_all_cloud_images_stale(self):
+        self._cloud_stale_images.update(self._cloud_map.values())
+
+    def _apply_uid_renames(self, image, renamed):
+        """Sunucu yeni uid verdiyse (silme geri alındığında) yerel nesneleri ve
+        canvas eşlemesini yeni uid'e taşır."""
+        ann_to_item = getattr(self.mw.ann_ctrl, "_ann_to_item", {})
+        for annotation in image.annotations:
+            new_uid = renamed.get(annotation.uid)
+            if not new_uid:
+                continue
+            item = ann_to_item.pop(annotation.uid, None)
+            annotation.uid = new_uid
+            if item is not None:
+                ann_to_item[new_uid] = item
 
     def _on_cloud_image_deleted(self, image, delete_record=None):
         """Ekip datasetindeki yerel silmeyi Supabase images kaydına uygular."""
@@ -601,6 +633,7 @@ class AccountController(QObject):
             self._cloud_annotation_records.clear()
             self._cloud_sync_inflight.clear()
             self._cloud_sync_pending.clear()
+            self._cloud_stale_images.clear()
             # Yerel/başka datasete geçince ekip odasından çık
             try:
                 if self.mw.collab_ctrl.is_in_lobby:

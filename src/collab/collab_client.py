@@ -18,7 +18,8 @@ class CollabClient(QObject):
     message_received = Signal(object)  # dict, Signal(dict) PySide6'da sorunlu olabiliyor
     connection_error = Signal(str)
 
-    MAX_RETRY = 10
+    MAX_RETRY = 10            # bu kadar denemeden sonra kullanıcı bir kez uyarılır
+    MAX_RETRY_DELAY_MS = 30000
     RETRY_INTERVAL_MS = 3000
     HEARTBEAT_INTERVAL_MS = 10000
     MAX_QUEUE_SIZE = 500
@@ -82,15 +83,19 @@ class CollabClient(QObject):
     def send(self, msg: dict):
         """Mesaj gönderir. Bağlı değilse kuyruğa ekler."""
         text = json.dumps(msg, ensure_ascii=False)
+        # print değil logger: exe'de stdout bir StringIO; her mesajda print
+        # uzun oturumlarda belleği sınırsız büyütüyordu.
         if self._is_connected:
-            print(f"[WS-SEND] {msg.get('type', '?')} ({len(text)} byte)", flush=True)
+            logger.debug("WS-SEND %s (%d byte)", msg.get('type', '?'), len(text))
             self._ws.sendTextMessage(text)
         else:
-            print(f"[WS-QUEUE] {msg.get('type', '?')} (bağlı değil)", flush=True)
+            if len(self._queue) == self._queue.maxlen:
+                logger.warning("Çevrimdışı kuyruk dolu; en eski mesaj atılıyor")
+            logger.debug("WS-QUEUE %s (bağlı değil)", msg.get('type', '?'))
             self._queue.append(text)
 
     def _on_connected(self):
-        print("[WS] BAĞLANDI!", flush=True)
+        logger.info("WebSocket bağlandı")
         self._is_connected = True
         self._retry_count = 0
         self._heartbeat_timer.start(self.HEARTBEAT_INTERVAL_MS)
@@ -118,7 +123,7 @@ class CollabClient(QObject):
         except json.JSONDecodeError:
             logger.warning(f"Geçersiz JSON: {text[:100]}")
             return
-        print(f"[WS-RECV] {msg.get('type', '?')} ({len(text)} byte)", flush=True)
+        logger.debug("WS-RECV %s (%d byte)", msg.get('type', '?'), len(text))
         self.message_received.emit(msg)
 
     def _on_error(self, error):
@@ -127,16 +132,17 @@ class CollabClient(QObject):
         self.connection_error.emit(f"Bağlantı hatası: {error_str}")
 
     def _schedule_reconnect(self):
-        if self._retry_count >= self.MAX_RETRY:
-            logger.error(f"{self.MAX_RETRY} deneme başarısız, yeniden bağlanma durduruluyor")
-            self.connection_error.emit(
-                f"Sunucuya {self.MAX_RETRY} denemede bağlanılamadı"
-            )
-            self._should_reconnect = False
-            return
+        # Vazgeçmek oturumu sessizce "lobide ama bağlantısız" bırakıyordu;
+        # bunun yerine kullanıcıyı bir kez uyar ve seyrek denemeye devam et.
         self._retry_count += 1
-        delay = min(self.RETRY_INTERVAL_MS * self._retry_count, 15000)
-        logger.info(f"Yeniden bağlanma denemesi {self._retry_count}/{self.MAX_RETRY} ({delay}ms)")
+        if self._retry_count == self.MAX_RETRY:
+            logger.error(f"{self.MAX_RETRY} deneme başarısız, denemeye seyrek devam ediliyor")
+            self.connection_error.emit(
+                f"Sunucuya {self.MAX_RETRY} denemede bağlanılamadı; "
+                "arka planda denemeye devam ediliyor"
+            )
+        delay = min(self.RETRY_INTERVAL_MS * self._retry_count, self.MAX_RETRY_DELAY_MS)
+        logger.info(f"Yeniden bağlanma denemesi {self._retry_count} ({delay}ms)")
         self._reconnect_timer.start(delay)
 
     def _try_reconnect(self):

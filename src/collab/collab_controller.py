@@ -20,9 +20,12 @@ MODIFY_THROTTLE_MS = 33
 REMOTE_SAVE_DEBOUNCE_MS = 500
 
 
+_logger = logging.getLogger("annotie.collab")
+
+
 def _dbg(msg):
-    """Debug print - konsola anında yazar."""
-    print(f"[COLLAB] {msg}", flush=True)
+    """Ayrıntılı işbirliği logu (DEBUG seviyesinde; varsayılan olarak yazılmaz)."""
+    _logger.debug(msg)
 
 
 class CollabController(QObject):
@@ -59,6 +62,7 @@ class CollabController(QObject):
         # Her (yeniden) bağlantıda güncel Supabase access token'ını verir; relay
         # kimlik doğrulaması tüm join'lerde zorunlu, token ~1 saatte yenilenir.
         self._token_provider = None
+        self._room_connected_before = False
         self._team_mode = False   # ekip dataseti odası (manifest'ten dataset kurma yok)
 
         # Modify throttle
@@ -144,6 +148,7 @@ class CollabController(QObject):
         self._session_server_url = server_url
         self._session_lobby_id = str(room_id).strip()
         self._session_token = token
+        self._room_connected_before = False
         self._client.connect_to_server(server_url)
 
     def set_token_provider(self, provider):
@@ -179,6 +184,13 @@ class CollabController(QObject):
                 "display_name": self._display_name,
             }
         elif self._session_kind == "room":
+            if self._room_connected_before:
+                # Kopukken gelen düzenlemeler kaçırıldı: bilinen DB satırları
+                # artık güvenilmez, her görsel bir sonraki kayıtta tazelenir.
+                account = getattr(self._main_window, 'account_ctrl', None)
+                if account is not None and hasattr(account, 'mark_all_cloud_images_stale'):
+                    account.mark_all_cloud_images_stale()
+            self._room_connected_before = True
             msg = {
                 "type": MsgType.JOIN_ROOM,
                 "room_id": self._session_lobby_id,
@@ -634,8 +646,23 @@ class CollabController(QObject):
 
     def _save_image_now(self, image):
         """Hemen diske yazar (create/delete için)."""
-        if self._main_window and hasattr(self._main_window, '_write_image_labels'):
-            self._main_window._write_image_labels(image)
+        self._write_remote_change(image)
+
+    def _write_remote_change(self, image):
+        """Uzaktan gelen değişikliği YALNIZCA yerel diske yazar.
+
+        Değişikliği gönderen istemci DB'ye zaten yazıyor; alıcı da yazarsa
+        eski sürüm tabanıyla çakışır ve görsel kalıcı conflict'e düşer. Alıcının
+        bilinen DB satırları eskidiği için görsel 'stale' işaretlenir: bir
+        sonraki yerel düzenleme önce güncel satırları çeker.
+        """
+        mw = self._main_window
+        if not mw or not hasattr(mw, '_write_image_labels'):
+            return
+        mw._write_image_labels(image, sync=False)
+        account = getattr(mw, 'account_ctrl', None)
+        if account is not None and hasattr(account, 'mark_cloud_image_stale'):
+            account.mark_cloud_image_stale(image)
 
     def _schedule_remote_save(self, image):
         """Modify için debounce'lu disk yazma."""
@@ -649,7 +676,7 @@ class CollabController(QObject):
             return
         for img in self._dataset.images.values():
             if id(img) in self._remote_dirty_images and img.dirty:
-                self._main_window._write_image_labels(img)
+                self._write_remote_change(img)
         self._remote_dirty_images.clear()
 
     def _build_manifest(self) -> dict:
